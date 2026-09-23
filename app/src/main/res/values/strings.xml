@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MotoTrack</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_history">Historial</string>
+    <string name="nav_detail">Detalle</string>
+</resources>

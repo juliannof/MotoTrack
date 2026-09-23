@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/scroll_detail"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Nombre y fecha -->
+        <TextView
+            android:id="@+id/tv_route_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/tv_date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Stats grid -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/surface"
+            app:cardCornerRadius="12dp">
+
+            <GridLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:columnCount="2"
+                android:rowCount="3"
+                android:padding="16dp">
+
+                <!-- Distancia -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Distancia" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_distance" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_cyan" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Duración -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Duración" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_duration" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Vel max -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Vel. Máxima" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_max_speed" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_cyan" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Vel media -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Vel. Media" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_avg_speed" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Max lean -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Max Lean Angle" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_max_lean" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_orange" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Max accel -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Max Aceleración" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_max_accel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_green" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+            </GridLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Mapa del recorrido -->
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Recorrido" android:textColor="@color/text_primary"
+            android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="260dp"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/surface"
+            app:cardCornerRadius="12dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <!-- SupportMapFragment como fragment hijo (childFragmentManager) -->
+                <androidx.fragment.app.FragmentContainerView
+                    android:id="@+id/map_container"
+                    android:name="com.google.android.gms.maps.SupportMapFragment"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <!-- Capa transparente: evita que el ScrollView robe los gestos del mapa -->
+                <View
+                    android:id="@+id/map_touch_overlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <TextView
+                    android:id="@+id/tv_map_empty"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:background="#CC1A1A1A"
+                    android:padding="8dp"
+                    android:text="Sin puntos GPS para esta ruta"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Gráfica velocidad -->
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Velocidad" android:textColor="@color/text_primary"
+            android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/chart_speed"
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:layout_marginBottom="16dp"
+            android:background="@color/surface"/>
+
+        <!-- Gráfica lean angle -->
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Lean Angle" android:textColor="@color/text_primary"
+            android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/chart_lean"
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:layout_marginBottom="16dp"
+            android:background="@color/surface"/>
+
+        <!-- Gráfica aceleración -->
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Aceleración" android:textColor="@color/text_primary"
+            android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/chart_accel"
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:layout_marginBottom="24dp"
+            android:background="@color/surface"/>
+
+        <!-- Botón exportar GPX -->
+        <Button
+            android:id="@+id/btn_export_gpx"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="📤 Exportar GPX"
+            android:textSize="15sp"
+            android:backgroundTint="@color/accent_cyan" />
+
+        <!-- Registro de sensores a 10 Hz, para depurar -->
+        <Button
+            android:id="@+id/btn_export_csv"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="8dp"
+            android:text="🧪 Exportar registro de sensores (CSV)"
+            android:textSize="15sp"
+            android:backgroundTint="@color/surface" />
+
+    </LinearLayout>
+</ScrollView>

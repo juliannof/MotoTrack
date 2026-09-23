@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondo oscuro estilo HUD moto -->
+    <color name="background">#0D0D0D</color>
+    <color name="surface">#1A1A1A</color>
+
+    <!-- Texto -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#888888</color>
+
+    <!-- Acentos -->
+    <color name="accent_cyan">#00BCD4</color>
+    <color name="accent_orange">#FF5722</color>
+    <color name="accent_green">#8BC34A</color>
+
+    <!-- Botones de acción -->
+    <color name="start_green">#2E7D32</color>
+    <color name="stop_red">#C62828</color>
+
+    <!-- Navigation bar -->
+    <color name="nav_item_color">#FFFFFF</color>
+
+    <!-- Status bar -->
+    <color name="colorPrimaryDark">#0D0D0D</color>
+    <color name="colorPrimary">#1A1A1A</color>
+    <color name="colorAccent">#00BCD4</color>
+</resources>

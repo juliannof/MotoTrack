@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/nav_dashboard">
+
+    <fragment
+        android:id="@+id/nav_dashboard"
+        android:name="com.mototrack.ui.DashboardFragment"
+        android:label="Dashboard"
+        tools:layout="@layout/fragment_dashboard" />
+
+    <fragment
+        android:id="@+id/nav_history"
+        android:name="com.mototrack.ui.HistoryFragment"
+        android:label="Historial"
+        tools:layout="@layout/fragment_history">
+
+        <action
+            android:id="@+id/action_history_to_detail"
+            app:destination="@id/nav_detail" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/nav_detail"
+        android:name="com.mototrack.ui.RouteDetailFragment"
+        android:label="Detalle de Ruta"
+        tools:layout="@layout/fragment_route_detail">
+
+        <argument
+            android:name="routeId"
+            app:argType="long" />
+    </fragment>
+
+</navigation>
