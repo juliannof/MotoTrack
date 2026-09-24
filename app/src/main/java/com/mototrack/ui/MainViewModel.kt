@@ -25,6 +25,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val pointCount    = TrackingService.pointCount
     val maxSpeed      = TrackingService.maxSpeed
     val maxLean       = TrackingService.maxLean
+    val maxLeanLeft   = TrackingService.maxLeanLeft
+    val maxLeanRight  = TrackingService.maxLeanRight
     val maxAccel      = TrackingService.maxAccel
     val distanceKm    = TrackingService.distanceKm
 

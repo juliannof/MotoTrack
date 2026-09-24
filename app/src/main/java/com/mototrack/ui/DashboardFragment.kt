@@ -69,9 +69,15 @@ class DashboardFragment : Fragment() {
             binding.tvMaxSpeed.text = String.format("%.0f km/h", max)
         }
 
-        viewModel.maxLean.observe(viewLifecycleOwner) { max ->
-            binding.tvMaxLean.text = String.format("%.1f°", max)
+        val showMaxLean = {
+            binding.tvMaxLean.text = String.format(
+                "I %.0f° · D %.0f°",
+                viewModel.maxLeanLeft.value ?: 0f,
+                viewModel.maxLeanRight.value ?: 0f
+            )
         }
+        viewModel.maxLeanLeft.observe(viewLifecycleOwner) { showMaxLean() }
+        viewModel.maxLeanRight.observe(viewLifecycleOwner) { showMaxLean() }
 
         viewModel.maxAccel.observe(viewLifecycleOwner) { max ->
             binding.tvMaxAccel.text = String.format("%.2f m/s²", max)

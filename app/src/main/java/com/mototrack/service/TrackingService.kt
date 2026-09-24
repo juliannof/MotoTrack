@@ -72,7 +72,9 @@ class TrackingService : Service(), SensorEventListener {
 
         // Estadísticas en tiempo real
         val maxSpeed        = MutableLiveData(0f)
-        val maxLean         = MutableLiveData(0f)
+        val maxLean         = MutableLiveData(0f)        // máximo de ambos lados
+        val maxLeanLeft     = MutableLiveData(0f)
+        val maxLeanRight    = MutableLiveData(0f)
         val maxAccel        = MutableLiveData(0f)
         val distanceKm      = MutableLiveData(0f)
     }
@@ -169,6 +171,8 @@ class TrackingService : Service(), SensorEventListener {
         pointsRecorded = 0
         maxSpeed.postValue(0f)
         maxLean.postValue(0f)
+        maxLeanLeft.postValue(0f)
+        maxLeanRight.postValue(0f)
         maxAccel.postValue(0f)
         distanceKm.postValue(0f)
 
@@ -206,7 +210,7 @@ class TrackingService : Service(), SensorEventListener {
         sensorLogger = null
         if (routeId != null) {
             Log.i(TAG, "Ruta $routeId detenida: $pointsRecorded puntos, ${fmt(totalDistance)} km, " +
-                "máx ${fmt(maxSpeed.value ?: 0f)} km/h, inclinación máx ${fmt(maxLean.value ?: 0f)}°")
+                "máx ${fmt(maxSpeed.value ?: 0f)} km/h, inclinación máx izq ${fmt(maxLeanLeft.value ?: 0f)}° / der ${fmt(maxLeanRight.value ?: 0f)}°")
         }
 
         unregisterSensors()
@@ -220,6 +224,8 @@ class TrackingService : Service(), SensorEventListener {
             val distance = totalDistance
             val maxSpeedKmh = maxSpeed.value ?: 0f
             val maxLeanAngle = maxLean.value ?: 0f
+            val maxLeanLeftDeg = maxLeanLeft.value ?: 0f
+            val maxLeanRightDeg = maxLeanRight.value ?: 0f
             val maxAcceleration = maxAccel.value ?: 0f
 
             // NonCancellable: stopSelf() dispara onDestroy, que cancela
@@ -244,6 +250,8 @@ class TrackingService : Service(), SensorEventListener {
                         maxSpeedKmh = maxSpeedKmh,
                         avgSpeedKmh = avgSpeed,
                         maxLeanAngle = maxLeanAngle,
+                        maxLeanLeft = maxLeanLeftDeg,
+                        maxLeanRight = maxLeanRightDeg,
                         maxAcceleration = maxAcceleration,
                         isCompleted = true
                     )
@@ -397,6 +405,12 @@ class TrackingService : Service(), SensorEventListener {
                 currentLeanSigned.postValue(correctedLean)
                 if (abs(correctedLean) > (maxLean.value ?: 0f)) {
                     maxLean.postValue(abs(correctedLean))
+                }
+                // Convención: negativo = izquierda, positivo = derecha
+                if (correctedLean < 0 && -correctedLean > (maxLeanLeft.value ?: 0f)) {
+                    maxLeanLeft.postValue(-correctedLean)
+                } else if (correctedLean > 0 && correctedLean > (maxLeanRight.value ?: 0f)) {
+                    maxLeanRight.postValue(correctedLean)
                 }
             }
         }

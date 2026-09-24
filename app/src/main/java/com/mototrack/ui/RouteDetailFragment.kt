@@ -180,7 +180,7 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             binding.tvDistance.text  = String.format("%.2f km", route.distanceKm)
             binding.tvMaxSpeed.text  = String.format("%.0f km/h", route.maxSpeedKmh)
             binding.tvAvgSpeed.text  = String.format("%.0f km/h", route.avgSpeedKmh)
-            binding.tvMaxLean.text   = String.format("%.1f°", route.maxLeanAngle)
+            binding.tvMaxLean.text   = String.format("I %.1f° · D %.1f°", route.maxLeanLeft, route.maxLeanRight)
             binding.tvMaxAccel.text  = String.format("%.2f m/s²", route.maxAcceleration)
 
             val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
