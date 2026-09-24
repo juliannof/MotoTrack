@@ -76,6 +76,13 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="18sp" />
             </LinearLayout>
+
+        <com.mototrack.ui.SpeedLimitSignView
+            android:id="@+id/speed_limit_sign"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="10dp" />
         </androidx.cardview.widget.CardView>
 
         <!-- LEAN ANGLE -->

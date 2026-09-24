@@ -18,6 +18,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Relay desde el servicio
     val isRecording   = TrackingService.isRecording
     val currentSpeed  = TrackingService.currentSpeed
+    val currentSpeedLimit = TrackingService.currentSpeedLimit
+    val speedLimitEstimated = TrackingService.speedLimitEstimated
     val currentLean   = TrackingService.currentLean
     val currentLeanSigned = TrackingService.currentLeanSigned
     val currentAccel  = TrackingService.currentAccel

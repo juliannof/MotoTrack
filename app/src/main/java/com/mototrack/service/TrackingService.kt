@@ -19,6 +19,7 @@ import com.mototrack.data.*
 import com.mototrack.ui.MainActivity
 import com.mototrack.utils.GpxExporter
 import com.mototrack.utils.RouteNamer
+import com.mototrack.utils.SpeedLimitProvider
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -59,8 +60,14 @@ class TrackingService : Service(), SensorEventListener {
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
+        // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
+        private const val LIMIT_QUERY_MIN_DISTANCE_M = 100f
+        private const val LIMIT_QUERY_MIN_INTERVAL_MS = 8_000L
+
         // LiveData compartida para la UI
         val currentSpeed    = MutableLiveData(0f)        // km/h
+        val currentSpeedLimit = MutableLiveData(0)       // km/h de la vía; 0 = desconocido
+        val speedLimitEstimated = MutableLiveData(false) // true: deducido del tipo de vía
         val currentLean     = MutableLiveData(0f)        // grados (valor absoluto)
         val currentLeanSigned = MutableLiveData(0f)      // grados: - izquierda, + derecha
         val currentAccel    = MutableLiveData(0f)        // m/s²
@@ -108,6 +115,11 @@ class TrackingService : Service(), SensorEventListener {
         }
     }
     private var lastLocation: Location? = null
+
+    // Consulta del límite de velocidad
+    private var limitQueryLocation: Location? = null
+    private var limitQueryTimeMs = 0L
+    private var limitQueryInFlight = false
     private var lastGpsSpeed = 0f
     private var lastGpsBearing = 0f
     private var restingAngleOffset = 0f
@@ -171,6 +183,9 @@ class TrackingService : Service(), SensorEventListener {
         pointsRecorded = 0
         maxSpeed.postValue(0f)
         maxLean.postValue(0f)
+        currentSpeedLimit.postValue(0)
+        speedLimitEstimated.postValue(false)
+        limitQueryLocation = null
         maxLeanLeft.postValue(0f)
         maxLeanRight.postValue(0f)
         maxAccel.postValue(0f)
@@ -322,6 +337,8 @@ class TrackingService : Service(), SensorEventListener {
         // Guardar punto
         savePoint(location)
 
+        updateSpeedLimit(location)
+
 
         // Auto-calibración a baja velocidad
         if (lastGpsSpeed < 20f) {
@@ -347,6 +364,38 @@ class TrackingService : Service(), SensorEventListener {
 
         // Actualizar notificación
         updateNotification()
+    }
+
+    /** Pregunta el límite de la vía cada ~100 m (y no más de una vez cada 8 s). */
+    private fun updateSpeedLimit(location: Location) {
+        if (limitQueryInFlight || sourceOf(location) != "gps" || lastGpsSpeed < 3f) return
+        val now = SystemClock.elapsedRealtime()
+        val prev = limitQueryLocation
+        if (prev != null &&
+            (now - limitQueryTimeMs < LIMIT_QUERY_MIN_INTERVAL_MS ||
+                prev.distanceTo(location) < LIMIT_QUERY_MIN_DISTANCE_M)
+        ) return
+
+        limitQueryInFlight = true
+        limitQueryLocation = location
+        limitQueryTimeMs = now
+        val bearing = if (location.hasBearing() && lastGpsSpeed > 10f) location.bearing else null
+
+        serviceScope.launch {
+            try {
+                when (val r = SpeedLimitProvider.fetch(location.latitude, location.longitude, bearing)) {
+                    // Vía encontrada: si no trae límite, mejor "desconocido" que el de la vía anterior
+                    is SpeedLimitProvider.Result.Ok -> {
+                        speedLimitEstimated.postValue(r.estimated)
+                        currentSpeedLimit.postValue(r.limitKmh ?: 0)
+                    }
+                    // Sin red: se conserva el último valor
+                    SpeedLimitProvider.Result.Failed -> Unit
+                }
+            } finally {
+                limitQueryInFlight = false
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

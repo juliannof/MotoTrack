@@ -56,6 +56,13 @@
                     android:textSize="11sp"
                     android:letterSpacing="0.12" />
 
+        <com.mototrack.ui.SpeedLimitSignView
+            android:id="@+id/speed_limit_sign"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="top|start"
+            android:layout_margin="8dp" />
+
                 <!-- km/h y máximo, abajo a la derecha -->
                 <LinearLayout
                     android:layout_width="wrap_content"
