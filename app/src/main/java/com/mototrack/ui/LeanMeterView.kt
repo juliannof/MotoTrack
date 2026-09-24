@@ -5,8 +5,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -47,6 +49,11 @@ class LeanMeterView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
     private val rect = RectF()
+    private val zeroPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = labelPaint.textSize
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
 
     private val colorOff = Color.parseColor("#2A2D2F")
     private val colorGreen = Color.parseColor("#8BC34A")
@@ -140,9 +147,28 @@ class LeanMeterView @JvmOverloads constructor(
             }
         }
 
-        // Escala bajo los LEDs: 60 · 30 · 0 · 30 · 60
+        // Moto recta: dentro de la zona muerta del centro (donde no se enciende ningún LED)
+        val straight = abs(lean) < step / 2
+        val barHalf = 1.5f * density
+        rect.set(cx - barHalf, top, cx + barHalf, top + ledH)
+        if (straight) {
+            ledPaint.color = colorGreen
+            ledPaint.alpha = 60
+            val halo = 2.5f * density
+            canvas.drawRoundRect(
+                rect.left - halo, rect.top - halo, rect.right + halo, rect.bottom + halo,
+                barHalf + halo, barHalf + halo, ledPaint
+            )
+            ledPaint.alpha = 255
+        } else {
+            ledPaint.color = colorOff
+        }
+        canvas.drawRoundRect(rect, barHalf, barHalf, ledPaint)
+
+        // Escala bajo los LEDs: 60 · 30 · 0 · 30 · 60 (el 0 se ilumina al ir recto)
         val labelY = top + ledH + labelH - 2 * density
-        canvas.drawText("0", cx, labelY, labelPaint)
+        zeroPaint.color = if (straight) colorGreen else labelPaint.color
+        canvas.drawText("0", cx, labelY, zeroPaint)
         for (deg in intArrayOf(30, 60)) {
             val i = (deg / step).toInt() - 1
             val offset = centerGap / 2 + i * (ledW + gap) + ledW / 2

@@ -61,6 +61,9 @@ class TrackingService : Service(), SensorEventListener {
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
+        // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
+        private const val ACCEL_SMOOTHING = 0.1f
+
         private const val LIMIT_QUERY_MIN_DISTANCE_M = 100f
         private const val LIMIT_QUERY_MIN_INTERVAL_MS = 8_000L
 
@@ -68,6 +71,8 @@ class TrackingService : Service(), SensorEventListener {
         val currentSpeed    = MutableLiveData(0f)        // km/h
         val currentSpeedLimit = MutableLiveData(0)       // km/h de la vía; 0 = desconocido
         val speedLimitEstimated = MutableLiveData(false) // true: deducido del tipo de vía
+        val avgSpeed        = MutableLiveData(0f)        // km/h, media de la ruta en curso
+        val longitudinalAccel = MutableLiveData(0f)      // m/s²: + acelerando, - frenando (sentido de la marcha)
         val currentLean     = MutableLiveData(0f)        // grados (valor absoluto)
         val currentLeanSigned = MutableLiveData(0f)      // grados: - izquierda, + derecha
         val currentAccel    = MutableLiveData(0f)        // m/s²
@@ -115,6 +120,11 @@ class TrackingService : Service(), SensorEventListener {
         }
     }
     private var lastLocation: Location? = null
+
+    // Media de velocidad de la ruta (misma definición que la que se guarda: media de los puntos)
+    private var speedSumKmh = 0.0
+    private var speedSamples = 0
+    private var smoothedAccel = 0f
 
     // Consulta del límite de velocidad
     private var limitQueryLocation: Location? = null
@@ -185,6 +195,11 @@ class TrackingService : Service(), SensorEventListener {
         maxLean.postValue(0f)
         currentSpeedLimit.postValue(0)
         speedLimitEstimated.postValue(false)
+        speedSumKmh = 0.0
+        speedSamples = 0
+        smoothedAccel = 0f
+        avgSpeed.postValue(0f)
+        longitudinalAccel.postValue(0f)
         limitQueryLocation = null
         maxLeanLeft.postValue(0f)
         maxLeanRight.postValue(0f)
@@ -326,6 +341,10 @@ class TrackingService : Service(), SensorEventListener {
         lastGpsAlt     = location.altitude
         lastLocation   = location
 
+        speedSumKmh += lastGpsSpeed
+        speedSamples++
+        avgSpeed.postValue((speedSumKmh / speedSamples).toFloat())
+
         currentSpeed.postValue(lastGpsSpeed)
         currentBearing.postValue(lastGpsBearing)
         currentAltitude.postValue(lastGpsAlt)
@@ -364,6 +383,35 @@ class TrackingService : Service(), SensorEventListener {
 
         // Actualizar notificación
         updateNotification()
+    }
+
+    /**
+     * Aceleración en el sentido de la marcha (+ acelerando, - frenando).
+     *
+     * Con el móvil en el manillar y la pantalla mirando al piloto (la misma
+     * suposición que el cálculo de inclinación), "adelante" es la normal de la
+     * pantalla en sentido contrario, proyectada en horizontal. Pasamos la
+     * aceleración del móvil al sistema del mundo (x = este, y = norte) con la
+     * matriz de rotación y nos quedamos con la parte que apunta hacia delante.
+     * La fuerza lateral de las curvas es perpendicular y no entra; la gravedad
+     * es vertical y tampoco. No necesita GPS, así que funciona parado.
+     */
+    private fun updateLongitudinalAccel(a: FloatArray) {
+        // Eje z del móvil (sale de la pantalla, hacia el piloto) en coordenadas del mundo
+        val zx = rotMatrix[2]
+        val zy = rotMatrix[5]
+        val horiz = hypot(zx, zy)
+
+        // Móvil tumbado (pantalla hacia arriba): no hay "adelante" definido
+        val forward = if (horiz < MIN_SCREEN_VERTICALITY) 0f else {
+            val fx = -zx / horiz
+            val fy = -zy / horiz
+            val east  = rotMatrix[0] * a[0] + rotMatrix[1] * a[1] + rotMatrix[2] * a[2]
+            val north = rotMatrix[3] * a[0] + rotMatrix[4] * a[1] + rotMatrix[5] * a[2]
+            east * fx + north * fy
+        }
+        smoothedAccel += ACCEL_SMOOTHING * (forward - smoothedAccel)
+        longitudinalAccel.postValue(smoothedAccel)
     }
 
     /** Pregunta el límite de la vía cada ~100 m (y no más de una vez cada 8 s). */
@@ -437,6 +485,8 @@ class TrackingService : Service(), SensorEventListener {
                 accelMagnitude = sqrt(
                     linearAcc[0].pow(2) + linearAcc[1].pow(2) + linearAcc[2].pow(2)
                 )
+
+                updateLongitudinalAccel(event.values)
 
                 currentAccel.postValue(accelMagnitude)
                 if (accelMagnitude > (maxAccel.value ?: 0f)) {
@@ -538,6 +588,8 @@ class TrackingService : Service(), SensorEventListener {
             } else {
                 append(",,,,none")
             }
+            append(',').append(currentSpeedLimit.value ?: 0)
+            append(String.format(Locale.US, ",%.2f", smoothedAccel))
         }
     }
 
@@ -572,7 +624,9 @@ class TrackingService : Service(), SensorEventListener {
                 hdop          = if (location.hasAccuracy()) location.accuracy else -1f,
                 vdop          = if (location.hasVerticalAccuracy()) location.verticalAccuracyMeters else -1f,
                 satellites    = location.extras?.getInt("satellites") ?: 0,
-                altitudeEllipsoid = if (location.hasMslAltitude()) location.mslAltitudeMeters else location.altitude
+                altitudeEllipsoid = if (location.hasMslAltitude()) location.mslAltitudeMeters else location.altitude,
+                speedLimitKmh = currentSpeedLimit.value ?: 0,
+                speedLimitEstimated = speedLimitEstimated.value ?: false
             )
             db.routeDao().insertPoint(point)
             pointsRecorded++

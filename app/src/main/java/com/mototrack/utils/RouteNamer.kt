@@ -3,6 +3,7 @@ package com.mototrack.utils
 import android.content.Context
 import android.location.Address
 import android.location.Geocoder
+import android.location.Location
 import android.util.Log
 import com.mototrack.data.RoutePoint
 import java.io.IOException
@@ -26,6 +27,26 @@ object RouteNamer {
     fun isDefaultName(name: String) = DEFAULT_NAME.matches(name)
 
     /**
+     * Lugares propios: si un punto cae dentro del radio, se usa este nombre en
+     * lugar del barrio o municipio del Geocoder (p. ej. "Ojén" → el colegio).
+     */
+    private class KnownPlace(val name: String, val lat: Double, val lon: Double, val radiusM: Float)
+
+    private val KNOWN_PLACES = listOf(
+        // Ojén: el aparcamiento está enfrente, a unos 26 m
+        KnownPlace("Colegio Alemán de Málaga", 36.52976, -4.75388, 150f)
+    )
+
+    private fun knownPlaceAt(lat: Double, lon: Double): String? {
+        val out = FloatArray(1)
+        return KNOWN_PLACES
+            .map { it to run { Location.distanceBetween(lat, lon, it.lat, it.lon, out); out[0] } }
+            .filter { (place, dist) -> dist <= place.radiusM }
+            .minByOrNull { (_, dist) -> dist }
+            ?.first?.name
+    }
+
+    /**
      * Bloquea mientras consulta la red: llamar desde Dispatchers.IO.
      * Devuelve null si no hay geocoder, conexión o puntos válidos.
      */
@@ -35,7 +56,7 @@ object RouteNamer {
         if (valid.isEmpty()) return null
 
         val geocoder = Geocoder(context, Locale.getDefault())
-        fun placeAt(p: RoutePoint): String? = try {
+        fun placeAt(p: RoutePoint): String? = knownPlaceAt(p.latitude, p.longitude) ?: try {
             // La versión con callback es de API 33; esta síncrona vale para
             // minSdk 26 y ya estamos en un hilo de fondo
             @Suppress("DEPRECATION")

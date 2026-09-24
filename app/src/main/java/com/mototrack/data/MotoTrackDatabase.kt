@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Route::class, RoutePoint::class],
-    version = 3,  // era 2
+    version = 4,  // era 3
     exportSchema = false
 )
 abstract class MotoTrackDatabase : RoomDatabase() {
@@ -35,6 +35,14 @@ abstract class MotoTrackDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 -> v4: límite de velocidad de la vía en cada punto. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE route_points ADD COLUMN speedLimitKmh INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE route_points ADD COLUMN speedLimitEstimated INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MotoTrackDatabase? = null
 
@@ -44,7 +52,7 @@ abstract class MotoTrackDatabase : RoomDatabase() {
                     context.applicationContext,
                     MotoTrackDatabase::class.java,
                     "mototrack_database"
-                ).addMigrations(MIGRATION_2_3).build()
+                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4).build()
                 INSTANCE = instance
                 instance
             }

@@ -52,7 +52,7 @@ class SensorLogger(private val file: File) {
 
         const val HEADER = "timestamp_ms,elapsed_s,lean_raw_deg,lean_offset_deg,lean_deg," +
             "screen_rotation,accel_x,accel_y,accel_z,accel_total,speed_kmh," +
-            "lat,lon,accuracy_m,fix_age_s,source"
+            "lat,lon,accuracy_m,fix_age_s,source,speed_limit_kmh,long_accel_ms2"
 
         fun fileFor(context: Context, routeId: Long) =
             File(context.filesDir, "sensor_logs/route_$routeId.csv")

@@ -19,6 +19,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRecording   = TrackingService.isRecording
     val currentSpeed  = TrackingService.currentSpeed
     val currentSpeedLimit = TrackingService.currentSpeedLimit
+    val avgSpeed      = TrackingService.avgSpeed
+    val longitudinalAccel = TrackingService.longitudinalAccel
     val speedLimitEstimated = TrackingService.speedLimitEstimated
     val currentLean   = TrackingService.currentLean
     val currentLeanSigned = TrackingService.currentLeanSigned

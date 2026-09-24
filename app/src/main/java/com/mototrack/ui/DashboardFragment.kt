@@ -1,6 +1,7 @@
 package com.mototrack.ui
 
 import android.app.AlertDialog
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.*
 import android.widget.EditText
@@ -32,7 +33,7 @@ class DashboardFragment : Fragment() {
         setupButtons()
     }
 
-    /** Señal con el límite; si lo superas, la señal se tiñe y los dígitos pasan a naranja. */
+    /** Señal con el límite; si lo superas, la señal se tiñe de rojo claro. */
     private fun updateSpeedLimitSign() {
         val limit = viewModel.currentSpeedLimit.value ?: 0
         val speed = viewModel.currentSpeed.value ?: 0f
@@ -40,9 +41,6 @@ class DashboardFragment : Fragment() {
         binding.speedLimitSign.setEstimated(viewModel.speedLimitEstimated.value ?: false)
         binding.speedLimitSign.setLimit(limit)
         binding.speedLimitSign.setExceeded(exceeded)
-        binding.tvSpeed.setTextColor(
-            ContextCompat.getColor(requireContext(), if (exceeded) R.color.accent_orange else R.color.accent_cyan)
-        )
     }
 
     private fun setupObservers() {
@@ -57,19 +55,16 @@ class DashboardFragment : Fragment() {
         viewModel.currentSpeedLimit.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
         viewModel.speedLimitEstimated.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
 
-        // Lean angle
-        viewModel.currentLean.observe(viewLifecycleOwner) { lean ->
-            binding.tvLean.text = String.format("%.1f°", lean)
-        }
-
         // Vúmetro: necesita el signo para saber hacia qué lado encender
         viewModel.currentLeanSigned.observe(viewLifecycleOwner) { lean ->
             binding.leanMeter.setLean(lean)
         }
 
         // Aceleración
-        viewModel.currentAccel.observe(viewLifecycleOwner) { accel ->
-            binding.tvAccel.text = String.format("%.2f m/s²", accel)
+        // Vúmetro vertical: positivo = acelerando, negativo = frenando
+        viewModel.longitudinalAccel.observe(viewLifecycleOwner) { accel ->
+            binding.tvAccel.text = String.format("%+.1f", accel)
+            binding.accelMeter.setAccel(accel)
         }
 
         // Distancia
@@ -97,8 +92,9 @@ class DashboardFragment : Fragment() {
         viewModel.maxLeanLeft.observe(viewLifecycleOwner) { showMaxLean() }
         viewModel.maxLeanRight.observe(viewLifecycleOwner) { showMaxLean() }
 
-        viewModel.maxAccel.observe(viewLifecycleOwner) { max ->
-            binding.tvMaxAccel.text = String.format("%.2f m/s²", max)
+        viewModel.avgSpeed.observe(viewLifecycleOwner) { avg ->
+            binding.tvAvgSpeed.text = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) String.format("%.0f km/h", avg)
+                                      else String.format("Vmed: %.0f km/h", avg)
         }
 
         // Estado de grabación → actualizar UI
@@ -152,8 +148,8 @@ class DashboardFragment : Fragment() {
 
     private fun resetUI() {
         binding.tvSpeed.text = "0"
-        binding.tvLean.text = "0.0°"
-        binding.tvAccel.text = "0.00 m/s²"
+        binding.tvAccel.text = "+0.0"
+        binding.accelMeter.reset()
         binding.tvDistance.text = "0.00 km"
         binding.leanMeter.reset()
     }

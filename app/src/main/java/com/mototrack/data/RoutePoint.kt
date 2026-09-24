@@ -51,5 +51,10 @@ data class RoutePoint(
     val hdop: Float,              // precisión horizontal GPS (menor = mejor)
     val vdop: Float,              // precisión vertical
     val satellites: Int,          // satélites usados
-    val altitudeEllipsoid: Double // altitud sobre el elipsoide (vs nivel del mar)
+    val altitudeEllipsoid: Double, // altitud sobre el elipsoide (vs nivel del mar)
+
+    // Límite de velocidad de la vía (OpenStreetMap), en km/h; 0 = desconocido
+    val speedLimitKmh: Int = 0,
+    // true si el límite se dedujo del tipo de vía y no de una etiqueta maxspeed
+    val speedLimitEstimated: Boolean = false
 )

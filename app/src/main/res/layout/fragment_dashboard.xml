@@ -65,7 +65,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="120dp"
                     android:text="0"
-                    android:textColor="@color/accent_cyan"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold"
                     android:fontFamily="sans-serif-condensed" />
 
@@ -109,15 +109,6 @@
                     android:textSize="11sp"
                     android:letterSpacing="0.1" />
 
-                <TextView
-                    android:id="@+id/tv_lean"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.0°"
-                    android:textColor="@color/accent_orange"
-                    android:textSize="40sp"
-                    android:textStyle="bold" />
-
                 <!-- Vúmetro: izquierda ← 0 → derecha -->
                 <com.mototrack.ui.LeanMeterView
                     android:id="@+id/lean_meter"
@@ -157,32 +148,39 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center"
-                    android:orientation="vertical"
+                    android:orientation="horizontal"
                     android:padding="16dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="ACELERACIÓN"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                    <!-- Vúmetro vertical: arriba acelera, abajo frena -->
+                    <com.mototrack.ui.AccelMeterView
+                        android:id="@+id/accel_meter"
+                        android:layout_width="28dp"
+                        android:layout_height="96dp" />
 
-                    <TextView
-                        android:id="@+id/tv_accel"
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="0.00 m/s²"
-                        android:textColor="@color/accent_green"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
+                        android:layout_weight="1"
+                        android:layout_marginStart="12dp"
+                        android:gravity="center"
+                        android:orientation="vertical">
 
-                    <TextView
-                        android:id="@+id/tv_max_accel"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Máx: 0.00"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ACELERACIÓN"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/tv_accel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0.0"
+                            android:textColor="@color/text_primary"
+                            android:textSize="22sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
@@ -224,6 +222,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Vmáx: 0 km/h"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tv_avg_speed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Vmed: 0 km/h"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp" />
                 </LinearLayout>
