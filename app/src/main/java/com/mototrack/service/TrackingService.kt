@@ -54,6 +54,10 @@ class TrackingService : Service(), SensorEventListener {
         // Clave nueva: los offsets guardados con el cálculo antiguo (roll de
         // getOrientation) no valen para la inclinación lateral actual
         private const val PREF_LEAN_OFFSET = "resting_lean_offset"
+        // Una moto no pasa de ~65° de inclinación; más allá es ruido de orientación
+        private const val MAX_PLAUSIBLE_LEAN_DEG = 70f
+        // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
+        private const val MIN_SCREEN_VERTICALITY = 0.5f
 
         // LiveData compartida para la UI
         val currentSpeed    = MutableLiveData(0f)        // km/h
@@ -385,7 +389,8 @@ class TrackingService : Service(), SensorEventListener {
 
             Sensor.TYPE_ROTATION_VECTOR -> {
                 SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
-                rawLeanAngle = lateralLeanDegrees()
+                // Lectura no fiable: se conserva el último lean válido
+                rawLeanAngle = lateralLeanDegrees() ?: return
                 val correctedLean = rawLeanAngle - restingAngleOffset
                 currentLeanDeg = correctedLean
                 currentLean.postValue(abs(correctedLean))
@@ -408,7 +413,7 @@ class TrackingService : Service(), SensorEventListener {
      * (El roll de getOrientation() medía otra cosa: con el móvil vertical u
      * horizontal mezclaba el cabeceo delante/atrás.)
      */
-    private fun lateralLeanDegrees(): Float {
+    private fun lateralLeanDegrees(): Float? {
         // Fila 3 de la matriz de rotación = eje "arriba" del mundo expresado
         // en coordenadas del dispositivo (x derecha, y arriba en vertical)
         val ux = rotMatrix[6]
@@ -422,7 +427,14 @@ class TrackingService : Service(), SensorEventListener {
             Surface.ROTATION_270 -> uy to -ux
             else                 -> ux to uy
         }
-        return Math.toDegrees(atan2(-sx, sy).toDouble()).toFloat()
+
+        // Móvil fuera del soporte (pantalla casi horizontal, boca abajo, en el
+        // bolsillo…): la proyección es ~0 o apunta hacia abajo y atan2 se
+        // dispara (-120°, +170° en el test del 24/09). No hay lean fiable.
+        if (sqrt(sx * sx + sy * sy) < MIN_SCREEN_VERTICALITY || sy <= 0f) return null
+
+        val lean = Math.toDegrees(atan2(-sx, sy).toDouble()).toFloat()
+        return if (abs(lean) <= MAX_PLAUSIBLE_LEAN_DEG) lean else null
     }
 
     /** GPS si el error es pequeño; si no, la posición viene de WiFi/antenas. */
