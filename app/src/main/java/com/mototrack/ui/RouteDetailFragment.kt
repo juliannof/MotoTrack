@@ -13,7 +13,10 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
+import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.github.mikephil.charting.data.*
 import com.github.mikephil.charting.formatter.ValueFormatter
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -23,6 +26,7 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.mototrack.R
@@ -46,6 +50,11 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
     // y pintamos cuando estén los dos. Se anulan en onDestroyView.
     private var googleMap: GoogleMap? = null
     private var routePoints: List<RoutePoint>? = null
+
+    // Selección en las gráficas: se refleja en todas y en un marcador del mapa
+    private var selectionMarker: Marker? = null
+    private var syncingSelection = false
+    private var charts: List<LineChart> = emptyList()
 
     // Ciclo de vida de un Fragment (a diferencia de una página Ionic, que vive
     // mientras esté en el stack): la *vista* se destruye al navegar hacia otra
@@ -115,6 +124,7 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         val points = routePoints ?: return
 
         map.clear()
+        selectionMarker = null
 
         // Descartamos puntos sin fix GPS válido (0,0 en el golfo de Guinea).
         val latLngs = points
@@ -136,13 +146,7 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             }
 
             else -> {
-                map.addPolyline(
-                    PolylineOptions()
-                        .addAll(latLngs)
-                        .color(ContextCompat.getColor(requireContext(), R.color.accent_cyan))
-                        .width(10f)
-                        .geodesic(true)
-                )
+                drawHeatLine(map, points)
                 map.addMarker(
                     MarkerOptions().position(latLngs.first()).title("Inicio")
                         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
@@ -200,72 +204,162 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             routePoints = points
 
             // Gráficas
-            if (points.isNotEmpty()) {
-                setupSpeedChart(points.map { it.speedKmh })
-                setupLeanChart(points.map { it.leanAngle })
-                setupAccelChart(points.map { it.accelTotal })
-            }
+            if (points.isNotEmpty()) setupCharts(points)
 
             // Mapa (si onMapReady aún no llegó, se pintará desde allí)
             renderRouteOnMap()
         }
     }
 
-    private fun setupSpeedChart(values: List<Float>) {
-        val entries = values.mapIndexed { i, v -> Entry(i.toFloat(), v) }
-        val dataSet = LineDataSet(entries, "Velocidad (km/h)").apply {
-            color = Color.parseColor("#00BCD4")
+    /**
+     * Mapa de calor de la velocidad: el trazado cambia de verde (lento) a rojo
+     * (rápido) respecto a la velocidad máxima de la ruta. Los tramos contiguos del
+     * mismo tono se agrupan en una sola línea para no crear miles de polilíneas.
+     */
+    private fun drawHeatLine(map: GoogleMap, points: List<RoutePoint>) {
+        val valid = points.filter { it.latitude != 0.0 || it.longitude != 0.0 }
+        val maxSpeed = valid.maxOfOrNull { it.speedKmh }?.takeIf { it > 1f } ?: 1f
+        binding.heatLegend.visibility = View.VISIBLE
+        binding.tvHeatMax.text = String.format("%.0f km/h", maxSpeed)
+
+        var run = mutableListOf<LatLng>()
+        var runShade = -1
+        fun flush() {
+            if (run.size >= 2) {
+                map.addPolyline(
+                    PolylineOptions().addAll(run).width(10f).geodesic(true)
+                        .color(heatColor(runShade / (HEAT_SHADES - 1f)))
+                )
+            }
+        }
+        for (i in 1 until valid.size) {
+            // Cada tramo toma el tono de la velocidad media de sus dos extremos
+            val v = (valid[i - 1].speedKmh + valid[i].speedKmh) / 2f
+            val shade = ((v / maxSpeed).coerceIn(0f, 1f) * (HEAT_SHADES - 1)).toInt()
+            if (shade != runShade) {
+                flush()
+                // El nuevo tramo arranca en el último punto: sin huecos entre colores
+                run = mutableListOf(LatLng(valid[i - 1].latitude, valid[i - 1].longitude))
+                runShade = shade
+            }
+            run.add(LatLng(valid[i].latitude, valid[i].longitude))
+        }
+        flush()
+    }
+
+    /** 0 = verde, 0.5 = amarillo, 1 = rojo. */
+    private fun heatColor(t: Float) = Color.HSVToColor(floatArrayOf(120f * (1f - t), 0.9f, 1f))
+
+    private fun setupCharts(points: List<RoutePoint>) {
+        val t0 = points.first().timestamp
+        val time = { i: Int ->
+            val s = ((points[i.coerceIn(0, points.size - 1)].timestamp - t0) / 1000).toInt()
+            String.format("%d:%02d", s / 60, s % 60)
+        }
+        // La altitud GPS es ruidosa: media móvil corta para que el perfil se lea
+        val elevation = points.map { it.altitude.toFloat() }.let { alt ->
+            alt.indices.map { i ->
+                val from = maxOf(0, i - 3); val to = minOf(alt.lastIndex, i + 3)
+                alt.subList(from, to + 1).average().toFloat()
+            }
+        }
+
+        // Orden fijo: velocidad, aceleración, ángulo lateral, altura del terreno
+        charts = listOf(
+            setupChart(binding.chartSpeed, points.map { it.speedKmh }, "Velocidad", "km/h", "%.0f", "#00BCD4", time),
+            setupChart(binding.chartAccel, points.map { it.accelTotal }, "Aceleración", "m/s²", "%.2f", "#8BC34A", time),
+            setupChart(binding.chartLean, points.map { it.leanAngle }, "Ángulo lateral", "°", "%.1f", "#FF5722", time),
+            setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
+        )
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupChart(
+        chart: LineChart, values: List<Float>, label: String, unit: String, format: String,
+        colorHex: String, time: (Int) -> String
+    ): LineChart {
+        val color = Color.parseColor(colorHex)
+        val dataSet = LineDataSet(values.mapIndexed { i, v -> Entry(i.toFloat(), v) }, label).apply {
+            this.color = color
             setDrawCircles(false)
             lineWidth = 2f
             setDrawFilled(true)
-            fillColor = Color.parseColor("#4400BCD4")
+            fillColor = color
+            fillAlpha = 68
+            // Cruz de selección: líneas vertical y horizontal sobre el punto elegido
+            highLightColor = Color.WHITE
+            highlightLineWidth = 1f
+            setDrawHorizontalHighlightIndicator(true)
+            setDrawVerticalHighlightIndicator(true)
         }
-        binding.chartSpeed.apply {
+        chart.apply {
             data = LineData(dataSet)
             description.isEnabled = false
             legend.isEnabled = false
             xAxis.position = XAxis.XAxisPosition.BOTTOM
             axisRight.isEnabled = false
+            // El eje X son muestras: se muestra el tiempo de ruta en lugar del índice
+            xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float) = time(value.toInt())
+            }
+            // Un toque o arrastre marca la muestra más cercana; sin zoom para no
+            // confundirlo con el gesto de selección
+            setTouchEnabled(true)
+            isHighlightPerTapEnabled = true
+            isHighlightPerDragEnabled = true
+            setScaleEnabled(false)
+            isDragEnabled = false
+            setMaxHighlightDistance(1000f)
+            marker = ChartMarkerView(requireContext()) { e ->
+                "${String.format(format, e.y)} $unit · ${time(e.x.toInt())}"
+            }
+            setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                override fun onValueSelected(e: Entry, h: Highlight) = selectSample(e.x.toInt(), chart)
+                override fun onNothingSelected() = clearSelection()
+            })
+            // El ScrollView no debe robar el arrastre horizontal sobre la gráfica
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> v.parent.requestDisallowInterceptTouchEvent(true)
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                        v.parent.requestDisallowInterceptTouchEvent(false)
+                }
+                false
+            }
             invalidate()
+        }
+        return chart
+    }
+
+    /** Marca la misma muestra en el resto de gráficas y pone un marcador en el mapa. */
+    private fun selectSample(index: Int, source: LineChart) {
+        if (syncingSelection) return
+        syncingSelection = true
+        charts.filter { it !== source }.forEach { it.highlightValue(index.toFloat(), 0) }
+        syncingSelection = false
+
+        val p = routePoints?.getOrNull(index)
+        val map = googleMap
+        if (p == null || map == null || (p.latitude == 0.0 && p.longitude == 0.0)) return
+        val pos = LatLng(p.latitude, p.longitude)
+        val marker = selectionMarker
+        if (marker == null) {
+            selectionMarker = map.addMarker(
+                MarkerOptions().position(pos).title("Punto seleccionado")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+            )
+        } else {
+            marker.position = pos
         }
     }
 
-    private fun setupLeanChart(values: List<Float>) {
-        val entries = values.mapIndexed { i, v -> Entry(i.toFloat(), v) }
-        val dataSet = LineDataSet(entries, "Lean angle (°)").apply {
-            color = Color.parseColor("#FF5722")
-            setDrawCircles(false)
-            lineWidth = 2f
-            setDrawFilled(true)
-            fillColor = Color.parseColor("#44FF5722")
-        }
-        binding.chartLean.apply {
-            data = LineData(dataSet)
-            description.isEnabled = false
-            legend.isEnabled = false
-            xAxis.position = XAxis.XAxisPosition.BOTTOM
-            axisRight.isEnabled = false
-            invalidate()
-        }
-    }
-
-    private fun setupAccelChart(values: List<Float>) {
-        val entries = values.mapIndexed { i, v -> Entry(i.toFloat(), v) }
-        val dataSet = LineDataSet(entries, "Aceleración (m/s²)").apply {
-            color = Color.parseColor("#8BC34A")
-            setDrawCircles(false)
-            lineWidth = 2f
-            setDrawFilled(true)
-            fillColor = Color.parseColor("#448BC34A")
-        }
-        binding.chartAccel.apply {
-            data = LineData(dataSet)
-            description.isEnabled = false
-            legend.isEnabled = false
-            xAxis.position = XAxis.XAxisPosition.BOTTOM
-            axisRight.isEnabled = false
-            invalidate()
-        }
+    private fun clearSelection() {
+        if (syncingSelection) return
+        syncingSelection = true
+        charts.forEach { it.highlightValues(null) }
+        syncingSelection = false
+        selectionMarker?.remove()
+        selectionMarker = null
     }
 
     private fun setupExportButton() {
@@ -318,6 +412,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         // con la nuestra: no hay que retenerlo (fuga de memoria) ni reutilizarlo.
         googleMap = null
         routePoints = null
+        selectionMarker = null
+        charts = emptyList()
         _binding = null
     }
 
@@ -327,5 +423,6 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         private const val DEFAULT_ZOOM = 5f
         private const val SINGLE_POINT_ZOOM = 16f
         private const val MAP_PADDING_PX = 80
+        private const val HEAT_SHADES = 16
     }
 }
