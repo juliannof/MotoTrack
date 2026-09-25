@@ -83,7 +83,8 @@
                         android:maxLines="1"
                         android:maxWidth="180dp"
                         android:textColor="@color/accent_cyan"
-                        android:textSize="14sp"
+                        android:textSize="16sp"
+                        android:fontFamily="sans-serif-black"
                         android:textStyle="bold" />
 
                     <!-- ¿Va a llover donde estoy? Justo debajo del lugar -->
@@ -94,8 +95,7 @@
                         android:drawablePadding="6dp"
                         android:gravity="center_vertical"
                         android:textColor="@color/text_secondary"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
+                        android:textSize="14sp"
                         android:visibility="gone" />
                 </LinearLayout>
 
