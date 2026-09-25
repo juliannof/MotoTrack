@@ -42,7 +42,7 @@
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:paddingTop="66dp"
-                    android:paddingBottom="32dp"
+                    android:paddingBottom="48dp"
                     android:text="0"
                     android:textColor="@color/text_primary"
                     android:textStyle="bold"
@@ -248,7 +248,9 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingStart="10dp"
-                android:paddingEnd="8dp">
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="9dp">
 
                 <!-- Vúmetro: izquierda ← 0 → derecha, con el máximo de cada lado marcado -->
                 <com.mototrack.ui.LeanMeterView
@@ -259,21 +261,21 @@
 
                 <!-- Etiqueta (o aviso de calibración) y máximos, a la derecha -->
                 <LinearLayout
-                    android:layout_width="140dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
                     android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/tv_lean_label"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
                         android:ellipsize="end"
                         android:letterSpacing="0.1"
                         android:maxLines="1"
-                        android:text="INCLINACIÓN"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="10sp" />
+                        android:textColor="@color/accent_orange"
+                        android:textSize="10sp"
+                        android:visibility="gone" />
 
                     <LinearLayout
                         android:layout_width="wrap_content"

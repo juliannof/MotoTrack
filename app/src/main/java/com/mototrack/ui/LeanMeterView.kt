@@ -51,7 +51,7 @@ class LeanMeterView @JvmOverloads constructor(
     }
     private val rect = RectF()
     private val peakTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 11f * resources.displayMetrics.scaledDensity
+        textSize = 10f * resources.displayMetrics.scaledDensity
         textAlign = Paint.Align.CENTER
         typeface = Typeface.DEFAULT_BOLD
     }
@@ -111,7 +111,7 @@ class LeanMeterView @JvmOverloads constructor(
 
         val labelH = if (showScale) labelPaint.textSize + 6 * density else 0f
         // Encima de los LEDs: el número del máximo y su marca
-        val peakH = peakTextPaint.textSize + 8 * density
+        val peakH = peakTextPaint.textSize + 6 * density
         val w = width - paddingLeft - paddingRight
         val cx = paddingLeft + w / 2f
         val gap = 3 * density

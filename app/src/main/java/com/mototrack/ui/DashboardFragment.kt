@@ -215,27 +215,35 @@ class DashboardFragment : Fragment() {
         binding.altitudeMeter.set(alt, if (routeMax.isNaN()) alt else maxOf(routeMax, alt))
     }
 
+    /** En horizontal no se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
+    private fun leanLabelDefault() =
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) "" else "INCLINACIÓN"
+
     private fun showCalibration(status: CalibrationStatus) {
         val label = binding.tvLeanLabel
         val (text, colorRes) = when (status) {
             // A la espera (sin distancia mínima o rodando) no se avisa de nada
-            CalibrationStatus.WAITING -> "INCLINACIÓN" to R.color.text_secondary
+            CalibrationStatus.WAITING -> leanLabelDefault() to R.color.text_secondary
             CalibrationStatus.MEASURING -> "CALIBRANDO… MOTO DERECHA" to R.color.accent_orange
             CalibrationStatus.DONE -> "CALIBRADO ✓" to R.color.accent_green
-            CalibrationStatus.OFF -> "INCLINACIÓN" to R.color.text_secondary
+            CalibrationStatus.OFF -> leanLabelDefault() to R.color.text_secondary
         }
         label.text = text
+        label.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
         label.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
         // Mientras se calibra el aviso ocupa toda la fila; el máximo vuelve después
         val calibrating = status == CalibrationStatus.MEASURING
-        binding.tvMaxLean.visibility = if (calibrating) View.GONE else View.VISIBLE
-        binding.tvMaxLeanTitle.visibility = if (calibrating) View.GONE else View.VISIBLE
+        // En horizontal los máximos van solo en el gráfico (barrita con su número): sin texto
+        val hideMaxText = calibrating || resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        binding.tvMaxLean.visibility = if (hideMaxText) View.GONE else View.VISIBLE
+        binding.tvMaxLeanTitle.visibility = if (hideMaxText) View.GONE else View.VISIBLE
 
         // "Calibrado" y "sin calibrar" se muestran unos segundos y vuelven a la etiqueta normal
         if (status == CalibrationStatus.DONE) {
             label.postDelayed({
                 if (_binding != null && viewModel.calibrationStatus.value == status) {
-                    binding.tvLeanLabel.text = "INCLINACIÓN"
+                    binding.tvLeanLabel.text = leanLabelDefault()
+                    binding.tvLeanLabel.visibility = if (leanLabelDefault().isEmpty()) View.GONE else View.VISIBLE
                     binding.tvLeanLabel.setTextColor(
                         ContextCompat.getColor(requireContext(), R.color.text_secondary))
                 }
