@@ -12,6 +12,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Vúmetro de inclinación lateral: una fila de LEDs redondeados que se
@@ -49,6 +50,11 @@ class LeanMeterView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
     private val rect = RectF()
+    private val peakTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 11f * resources.displayMetrics.scaledDensity
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+    }
     private val zeroPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = labelPaint.textSize
         textAlign = Paint.Align.CENTER
@@ -63,7 +69,13 @@ class LeanMeterView @JvmOverloads constructor(
 
     fun setLean(degrees: Float) {
         lean = degrees
-        if (degrees < 0) peakLeft = max(peakLeft, -degrees) else peakRight = max(peakRight, degrees)
+        invalidate()
+    }
+
+    /** Máxima inclinación de la ruta a cada lado (grados, positivos): queda marcada con su número. */
+    fun setPeaks(left: Float, right: Float) {
+        peakLeft = left
+        peakRight = right
         invalidate()
     }
 
@@ -95,14 +107,16 @@ class LeanMeterView @JvmOverloads constructor(
         super.onDraw(canvas)
 
         val labelH = labelPaint.textSize + 6 * density
+        // Encima de los LEDs: el número del máximo y su marca
+        val peakH = peakTextPaint.textSize + 8 * density
         val w = width - paddingLeft - paddingRight
         val cx = paddingLeft + w / 2f
         val gap = 3 * density
         val centerGap = 8 * density
         val ledW = (w - centerGap - gap * (ledsPerSide * 2 - 2)) / (ledsPerSide * 2)
         // Los LEDs no pasan de ~2,2 veces su ancho, para que parezcan LEDs y no barras
-        val ledH = min(height - paddingTop - paddingBottom - labelH, ledW * 2.2f)
-        val top = paddingTop + (height - paddingTop - paddingBottom - labelH - ledH) / 2f
+        val ledH = min(height - paddingTop - paddingBottom - labelH - peakH, ledW * 2.2f)
+        val top = paddingTop + peakH + (height - paddingTop - paddingBottom - labelH - peakH - ledH) / 2f
         val radius = ledW * 0.4f
 
         val leftLevel = if (lean < 0) -lean else 0f
@@ -111,7 +125,6 @@ class LeanMeterView @JvmOverloads constructor(
         for (side in arrayOf(-1, 1)) {
             val level = if (side < 0) leftLevel else rightLevel
             val peak = if (side < 0) peakLeft else peakRight
-            val peakIndex = ceil(peak / step).toInt() - 1
 
             for (i in 0 until ledsPerSide) {
                 val angle = (i + 1) * step
@@ -138,13 +151,25 @@ class LeanMeterView @JvmOverloads constructor(
                     ledPaint.color = colorOff
                 }
                 canvas.drawRoundRect(rect, radius, radius, ledPaint)
-
-                // Marca del máximo: contorno del color del LED
-                if (!lit && i == peakIndex) {
-                    peakPaint.color = color
-                    canvas.drawRoundRect(rect, radius, radius, peakPaint)
-                }
             }
+        }
+
+        // Máximo de cada lado, persistente: barrita sobre el LED que lo contiene y su número
+        for (side in arrayOf(-1, 1)) {
+            val peak = if (side < 0) peakLeft else peakRight
+            if (peak < 1f) continue
+            val i = (ceil(peak / step).toInt() - 1).coerceIn(0, ledsPerSide - 1)
+            val inner = cx + side * (centerGap / 2 + i * (ledW + gap))
+            val left = if (side < 0) inner - ledW else inner
+            val color = colorFor(peak)
+            ledPaint.color = color
+            rect.set(left, top - 4 * density, left + ledW, top - 2 * density)
+            canvas.drawRoundRect(rect, density, density, ledPaint)
+            peakTextPaint.color = color
+            val label = "${peak.roundToInt()}°"
+            val half = peakTextPaint.measureText(label) / 2f
+            val x = (left + ledW / 2f).coerceIn(paddingLeft + half, width - paddingRight - half)
+            canvas.drawText(label, x, top - 6 * density, peakTextPaint)
         }
 
         // Moto recta: dentro de la zona muerta del centro (donde no se enciende ningún LED)

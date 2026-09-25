@@ -143,6 +143,7 @@ class DashboardFragment : Fragment() {
         }
 
         val showMaxLean = {
+            binding.leanMeter.setPeaks(viewModel.maxLeanLeft.value ?: 0f, viewModel.maxLeanRight.value ?: 0f)
             binding.tvMaxLean.text = String.format(
                 "I %.0f° · D %.0f°",
                 viewModel.maxLeanLeft.value ?: 0f,
