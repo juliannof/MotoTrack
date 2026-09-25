@@ -65,26 +65,20 @@ class TrackingService : Service(), SensorEventListener {
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
-        // Autocalibración del cero de inclinación. Solo en el primer minuto desde que
-        // hay velocidad medida y solo rodando entre 5 y 20 km/h en línea recta: parado no se calibra (el
-        // móvil puede estar en la mano o sin montar) y en una curva lenta el lean no es
-        // cero (visto en la ruta 40: offset -28,8°). Ventana de 3 s con el ángulo estable.
-        private const val CALIB_PHASE_MS = 60_000L
-        private const val CALIB_MIN_SPEED_KMH = 5f
-        private const val CALIB_MAX_SPEED_KMH = 20f
-        private const val CALIB_MAX_LATERAL_MS2 = 0.5f
-        // Un fix llega cada ~1 s rodando: más viejo que esto es que estás parado o sin señal
-        private const val CALIB_MAX_FIX_AGE_S = 1.6
+        // Autocalibración del cero de inclinación (moto derecha). Lo mejor es hacerlo parado,
+        // pero solo tras haber recorrido una distancia mínima: así se sabe que el móvil va
+        // montado en la moto y no en la mano o sobre una mesa. Ventana de 3 s con el ángulo
+        // estable. Una vez por ruta.
+        private const val CALIB_MIN_DISTANCE_M = 200f
+        private const val CALIB_STOPPED_SPEED_KMH = 1f
         private const val CALIB_WINDOW_MS = 3_000L
-        // Rodando, la dirección se corrige algo: más margen que parado
-        private const val CALIB_MAX_STD_DEG = 1.0
+        private const val CALIB_MAX_STD_DEG = 0.5
         // Una inclinación del soporte mayor que esto no es del soporte: se ignora
         private const val CALIB_MAX_OFFSET_DEG = 15f
 
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
-        private const val LATERAL_SMOOTHING = 0.05f
 
         // Velocidad "caducada": sin fix nuevo, ver startStaleSpeedWatchdog
         private const val STALE_FIX_STOPPED_S = 2.5
@@ -190,12 +184,8 @@ class TrackingService : Service(), SensorEventListener {
     // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
     private var stillStartMs = 0L
     private var stillN = 0
-    // Aceleración lateral media (valor absoluto, filtrada): ~0 en recta, alta en curva
-    @Volatile private var lateralAccelAbs = 0f
-    // Fase inicial de calibración de la ruta: cuándo empezó, si ya se calibró y si ya se cerró
-    private var calibStartMs = 0L
+    // Ya se calibró en esta ruta (una vez por ruta)
     private var calibratedThisRide = false
-    private var calibPhaseOver = false
     private var stillSum = 0.0
     private var stillSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
@@ -272,8 +262,6 @@ class TrackingService : Service(), SensorEventListener {
         maxAltitude.postValue(Double.NaN)
         minAltitude.postValue(Double.NaN)
         calibratedThisRide = false
-        calibPhaseOver = false
-        calibStartMs = 0L   // empieza a contar con la primera velocidad medida
         stillN = 0
         calibrationStatus.postValue(CalibrationStatus.WAITING)
         avgSpeed.postValue(0f)
@@ -423,11 +411,6 @@ class TrackingService : Service(), SensorEventListener {
         }
 
         lastGpsSpeed   = location.speed * 3.6f   // m/s → km/h
-        // Primero se mide la velocidad y después se calibra: el minuto de la fase
-        // inicial empieza con la primera velocidad GPS válida, no al pulsar INICIAR
-        if (calibStartMs == 0L && location.hasSpeed() && sourceOf(location) == "gps") {
-            calibStartMs = SystemClock.elapsedRealtime()
-        }
         lastGpsBearing = location.bearing
         lastGpsAlt     = msl.of(location)
         lastLocation   = location
@@ -477,17 +460,13 @@ class TrackingService : Service(), SensorEventListener {
         val horiz = hypot(zx, zy)
 
         // Móvil tumbado (pantalla hacia arriba): no hay "adelante" definido
-        var lateral = 0f
         val forward = if (horiz < MIN_SCREEN_VERTICALITY) 0f else {
             val fx = -zx / horiz
             val fy = -zy / horiz
             val east  = rotMatrix[0] * a[0] + rotMatrix[1] * a[1] + rotMatrix[2] * a[2]
             val north = rotMatrix[3] * a[0] + rotMatrix[4] * a[1] + rotMatrix[5] * a[2]
-            // Perpendicular a "adelante": la fuerza de las curvas
-            lateral = east * fy - north * fx
             east * fx + north * fy
         }
-        lateralAccelAbs += LATERAL_SMOOTHING * (abs(lateral) - lateralAccelAbs)
         accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
         smoothedAccel = if (abs(accelFilter) < ACCEL_DEADBAND) 0f else accelFilter
         longitudinalAccel.postValue(smoothedAccel)
@@ -648,7 +627,6 @@ class TrackingService : Service(), SensorEventListener {
             Sensor.TYPE_ROTATION_VECTOR -> {
                 SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
                 // Lectura no fiable: se conserva el último lean válido
-                calibrationOpen()
                 rawLeanAngle = lateralLeanDegrees() ?: return
                 autoCalibrateWhenStill(rawLeanAngle)
                 val correctedLean = rawLeanAngle - restingAngleOffset
@@ -673,39 +651,14 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
-     * ¿Sigue abierta la fase de calibración? Empieza a contar con la primera velocidad
-     * medida y se cierra 1 minuto después; si se cierra sin haber calibrado se avisa y
-     * se sigue con el offset guardado de la vez anterior.
-     */
-    private fun calibrationOpen(): Boolean {
-        if (calibratedThisRide || calibPhaseOver) return false
-        // Aún sin velocidad medida: el reloj no ha empezado
-        if (calibStartMs == 0L) return true
-        if (SystemClock.elapsedRealtime() - calibStartMs > CALIB_PHASE_MS) {
-            calibPhaseOver = true
-            stillN = 0
-            setCalibrationStatus(CalibrationStatus.EXPIRED)
-            return false
-        }
-        return true
-    }
-
-    /**
-     * Fija el cero de inclinación cuando la moto rueda recta entre 5 y 20 km/h con el
-     * ángulo estable, durante la fase inicial de la ruta (ver [calibrationOpen]).
-     * "Recta" se comprueba con la aceleración lateral, que es la física de la curva:
-     * si es casi cero, la moto no está inclinada para tomarla.
+     * Fija el cero de inclinación con la moto parada y derecha, una vez por ruta y solo
+     * después de haber recorrido una distancia mínima (ver CALIB_MIN_DISTANCE_M).
+     * Se evalúa en cada lectura del sensor (no en cada fix GPS: parado no llegan fixes).
      */
     private fun autoCalibrateWhenStill(raw: Float) {
-        if (!calibrationOpen()) return
-        // Rodando de verdad: velocidad entre 5 y 20 km/h Y medida hace poco. Al pararte no
-        // llegan fixes y la última velocidad sigue "vigente" unos segundos: no vale.
-        val fixAgeS = lastLocation?.let {
-            (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1e9
-        } ?: Double.MAX_VALUE
-        val rolling = lastGpsSpeed >= CALIB_MIN_SPEED_KMH && lastGpsSpeed < CALIB_MAX_SPEED_KMH &&
-            fixAgeS < CALIB_MAX_FIX_AGE_S
-        if (!rolling || lateralAccelAbs > CALIB_MAX_LATERAL_MS2) {
+        if (calibratedThisRide) return
+        val stopped = lastGpsSpeed < CALIB_STOPPED_SPEED_KMH
+        if (totalDistance * 1000f < CALIB_MIN_DISTANCE_M || !stopped) {
             stillN = 0
             setCalibrationStatus(CalibrationStatus.WAITING)
             return
@@ -912,8 +865,7 @@ class TrackingService : Service(), SensorEventListener {
 /** Estado de la calibración inicial del ángulo de inclinación, para avisar al usuario. */
 enum class CalibrationStatus {
     OFF,        // sin ruta en curso
-    WAITING,    // a la espera de que el piloto ruede recto entre 5 y 20 km/h
-    MEASURING,  // midiendo el cero de inclinación: hay que seguir recto
-    DONE,       // calibrado
-    EXPIRED     // la fase inicial acabó sin calibrar: se sigue con el offset anterior
+    WAITING,    // a la espera de la distancia mínima y de una parada
+    MEASURING,  // parado y midiendo el cero de inclinación: mantener la moto derecha
+    DONE        // calibrado
 }
