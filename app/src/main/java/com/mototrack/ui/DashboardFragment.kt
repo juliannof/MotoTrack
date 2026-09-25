@@ -180,7 +180,8 @@ class DashboardFragment : Fragment() {
     private fun showCalibration(status: CalibrationStatus) {
         val label = binding.tvLeanLabel
         val (text, colorRes) = when (status) {
-            CalibrationStatus.WAITING -> "CALIBRAR: RECTO A 5-20 KM/H" to R.color.accent_orange
+            // A la espera (parado, fuera de 5-20 km/h o en curva) no se avisa de nada
+            CalibrationStatus.WAITING -> "INCLINACIÓN" to R.color.text_secondary
             CalibrationStatus.MEASURING -> "CALIBRANDO… SIGUE RECTO" to R.color.accent_orange
             CalibrationStatus.DONE -> "CALIBRADO ✓" to R.color.accent_green
             CalibrationStatus.EXPIRED -> "SIN CALIBRAR (OFFSET ANTERIOR)" to R.color.text_secondary
@@ -189,7 +190,7 @@ class DashboardFragment : Fragment() {
         label.text = text
         label.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
         // Mientras se calibra el aviso ocupa toda la fila; el máximo vuelve después
-        val calibrating = status == CalibrationStatus.WAITING || status == CalibrationStatus.MEASURING
+        val calibrating = status == CalibrationStatus.MEASURING
         binding.tvMaxLean.visibility = if (calibrating) View.GONE else View.VISIBLE
         binding.tvMaxLeanTitle.visibility = if (calibrating) View.GONE else View.VISIBLE
 
