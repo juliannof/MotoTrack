@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     lateinit var viewModel: MainViewModel
     private var currentDestinationId: Int? = null
+    private lateinit var appBarConfig: AppBarConfiguration
     private val auth by lazy { AuthRepository(this) }
 
     private val requiredPermissions = arrayOf(
@@ -76,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         val navController = navHostFragment.navController
 
         // Con el DrawerLayout en la config, la barra superior muestra la hamburguesa
-        val appBarConfig = AppBarConfiguration(
+        appBarConfig = AppBarConfiguration(
             setOf(R.id.nav_dashboard, R.id.nav_history), binding.drawerLayout
         )
         setupActionBarWithNavController(navController, appBarConfig)
@@ -177,9 +178,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // La hamburguesa es el botón "arriba" de un destino principal: con el DrawerLayout en la
+    // configuración, navigateUp(appBarConfig) abre el menú lateral (antes no hacía nada)
     override fun onSupportNavigateUp(): Boolean {
         val navController = findNavController(R.id.nav_host_fragment)
-        return navController.navigateUp() || super.onSupportNavigateUp()
+        return NavigationUI.navigateUp(navController, appBarConfig) || super.onSupportNavigateUp()
     }
 
 }
