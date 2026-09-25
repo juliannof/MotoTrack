@@ -114,6 +114,7 @@ class TrackingService : Service(), SensorEventListener {
         private const val AHEAD_MIN_M = 100.0
         private const val AHEAD_MAX_M = 350.0
         private const val AHEAD_MIN_SPEED_KMH = 10f
+        private const val BEARING_MIN_SPEED_KMH = 5f
         private const val AHEAD_MIN_DISTANCE_M = 60f
         private const val AHEAD_MIN_INTERVAL_MS = 5_000L
 
@@ -541,7 +542,9 @@ class TrackingService : Service(), SensorEventListener {
      */
     private fun updateSpeedLimit(location: Location) {
         if (sourceOf(location) != "gps" || lastGpsSpeed < 3f) return
-        val bearing = if (location.hasBearing() && lastGpsSpeed > AHEAD_MIN_SPEED_KMH) location.bearing else null
+        // El rumbo decide qué vía es la nuestra al cruzar otra (una autovía por debajo o por encima
+        // va a 90° y se descarta); el GPS lo da con fiabilidad desde unos 5 km/h
+        val bearing = if (location.hasBearing() && lastGpsSpeed >= BEARING_MIN_SPEED_KMH) location.bearing else null
 
         serviceScope.launch {
             val cacheDao = db.speedLimitCacheDao()
@@ -553,7 +556,7 @@ class TrackingService : Service(), SensorEventListener {
 
             // 2) La vía de delante: si su límite no está en la caché, se pide ya para tenerlo
             //    cuando lleguemos. Sin prisa: la consulta de aquí tiene prioridad.
-            if (bearing != null && !hereSlot.inFlight) {
+            if (bearing != null && lastGpsSpeed >= AHEAD_MIN_SPEED_KMH && !hereSlot.inFlight) {
                 val metres = (lastGpsSpeed / 3.6 * AHEAD_SECONDS).coerceIn(AHEAD_MIN_M, AHEAD_MAX_M)
                 val ahead = pointAhead(location, bearing, metres)
                 if (SpeedLimitCache.get(cacheDao, ahead.latitude, ahead.longitude, bearing) == null) {
