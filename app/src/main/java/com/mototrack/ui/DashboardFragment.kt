@@ -55,6 +55,7 @@ class DashboardFragment : Fragment() {
 
         // Velocidad
         viewModel.currentSpeed.observe(viewLifecycleOwner) { speed ->
+            updateAltitudeMeter()
             binding.tvSpeed.text = String.format("%.0f", speed)
             updateSpeedLimitSign()
         }
@@ -79,7 +80,9 @@ class DashboardFragment : Fragment() {
         // Altura sobre el nivel del mar
         viewModel.currentAltitude.observe(viewLifecycleOwner) { alt ->
             binding.tvAltitude.text = String.format("%.0f m", alt)
+            updateAltitudeMeter()
         }
+        viewModel.maxAltitude.observe(viewLifecycleOwner) { updateAltitudeMeter() }
 
         // Calibración del ángulo: se avisa en la propia tarjeta de inclinación
         viewModel.calibrationStatus.observe(viewLifecycleOwner) { showCalibration(it) }
@@ -96,7 +99,7 @@ class DashboardFragment : Fragment() {
 
         // Stats máximos
         viewModel.maxSpeed.observe(viewLifecycleOwner) { max ->
-            binding.tvMaxSpeed.text = String.format("%.0f km/h", max)
+            binding.tvMaxSpeed.text = String.format("%.0f", max)
         }
 
         val showMaxLean = {
@@ -116,6 +119,7 @@ class DashboardFragment : Fragment() {
 
         // Estado de grabación → actualizar UI
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
+            updateAltitudeMeter()
             if (recording) {
                 binding.btnRecord.text = "⏹ DETENER"
                 binding.btnRecord.setBackgroundColor(
@@ -131,6 +135,19 @@ class DashboardFragment : Fragment() {
                 resetUI()
             }
         }
+    }
+
+    /**
+     * Último LED = altura máxima de la ruta. Sin ruta en curso o con la moto
+     * parada se encienden todos.
+     */
+    private fun updateAltitudeMeter() {
+        val alt = viewModel.currentAltitude.value ?: return
+        val max = viewModel.maxAltitude.value ?: 0.0
+        val recording = viewModel.isRecording.value == true
+        val stopped = (viewModel.currentSpeed.value ?: 0f) < 1f
+        val fraction = if (!recording || stopped || max <= 0.0) 1f else (alt / max).toFloat()
+        binding.altitudeMeter.setFraction(fraction)
     }
 
     private fun showCalibration(status: CalibrationStatus) {

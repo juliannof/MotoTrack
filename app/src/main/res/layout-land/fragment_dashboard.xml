@@ -65,7 +65,7 @@
             android:layout_gravity="top|start"
             android:layout_margin="8dp" />
 
-                <!-- km/h y máximo, abajo a la derecha -->
+                <!-- km/h y media, abajo a la derecha -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -86,24 +86,6 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="16dp"
-                        android:text="MÁX"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1" />
-
-                    <TextView
-                        android:id="@+id/tv_max_speed"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:text="0 km/h"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="16dp"
                         android:text="MED"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp"
@@ -117,6 +99,44 @@
                         android:text="0 km/h"
                         android:textColor="@color/text_secondary"
                         android:textSize="13sp" />
+                </LinearLayout>
+
+                <!-- Velocidad máxima de la ruta, abajo a la izquierda: número grande y en negrita -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="10dp"
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:paddingBottom="4dp"
+                        android:text="MÁX"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tv_max_speed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="0"
+                        android:textColor="@color/text_primary"
+                        android:textSize="30sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="3dp"
+                        android:paddingBottom="4dp"
+                        android:text="km/h"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
                 </LinearLayout>
 
                 <!-- Indicador de grabación: esquina de la tarjeta, sin quitar espacio -->
@@ -389,6 +409,12 @@
                         android:textColor="@color/accent_orange"
                         android:textSize="24sp"
                         android:textStyle="bold"/>
+
+                    <com.mototrack.ui.AltitudeMeterView
+                        android:id="@+id/altitude_meter"
+                        android:layout_width="match_parent"
+                        android:layout_height="12dp"
+                        android:layout_marginTop="4dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>

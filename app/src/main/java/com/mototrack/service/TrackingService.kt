@@ -112,6 +112,7 @@ class TrackingService : Service(), SensorEventListener {
         val currentAccel    = MutableLiveData(0f)        // m/s²
         val currentBearing  = MutableLiveData(0f)        // grados
         val currentAltitude = MutableLiveData(0.0)       // metros
+        val maxAltitude     = MutableLiveData(0.0)       // metros: la más alta de la ruta en curso
         val isRecording     = MutableLiveData(false)
         val currentRouteId  = MutableLiveData<Long?>(null)
         val pointCount      = MutableLiveData(0)
@@ -259,6 +260,7 @@ class TrackingService : Service(), SensorEventListener {
         speedSamples = 0
         accelFilter = 0f
         smoothedAccel = 0f
+        maxAltitude.postValue(0.0)
         calibratedThisRide = false
         calibPhaseOver = false
         calibStartMs = SystemClock.elapsedRealtime()
@@ -423,6 +425,7 @@ class TrackingService : Service(), SensorEventListener {
         updateOverLimit()
         currentBearing.postValue(lastGpsBearing)
         currentAltitude.postValue(lastGpsAlt)
+        if (lastGpsAlt > (maxAltitude.value ?: 0.0)) maxAltitude.postValue(lastGpsAlt)
 
         if (lastGpsSpeed > (maxSpeed.value ?: 0f)) {
             maxSpeed.postValue(lastGpsSpeed)
