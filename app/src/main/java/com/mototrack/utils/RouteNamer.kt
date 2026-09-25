@@ -51,7 +51,10 @@ object RouteNamer {
             ?.first?.name
     }
 
-    private class Spot(val urbanization: String?, val street: String?)
+    private class Spot(val urbanization: String?, val street: String?, val number: String?) {
+        /** Urbanización si la hay; si no, la calle con su número ("Calle Azor del Coto, 5") cuando se conoce. */
+        fun label(): String? = urbanization ?: street?.let { s -> number?.let { "$s, $it" } ?: s }
+    }
 
     private var lastNominatimMs = 0L
 
@@ -80,7 +83,11 @@ object RouteNamer {
                 fun tag(vararg keys: String) = keys.firstNotNullOfOrNull { k ->
                     a.optString(k).takeIf { it.isNotBlank() }
                 }
-                Spot(urbanization = tag("residential", "neighbourhood"), street = tag("road"))
+                Spot(
+                    urbanization = tag("residential", "neighbourhood"),
+                    street = tag("road"),
+                    number = tag("house_number")
+                )
             } finally {
                 conn.disconnect()
             }
@@ -97,11 +104,13 @@ object RouteNamer {
      */
     fun nameAt(context: Context, lat: Double, lon: Double): String? {
         knownPlaceAt(lat, lon)?.let { return it }
-        spotAt(lat, lon)?.let { it.urbanization ?: it.street }?.let { return it }
+        spotAt(lat, lon)?.label()?.let { return it }
         if (!Geocoder.isPresent()) return null
         return try {
             @Suppress("DEPRECATION")
-            Geocoder(context, Locale.getDefault()).getFromLocation(lat, lon, 1)?.firstOrNull()?.placeName()
+            Geocoder(context, Locale.getDefault()).getFromLocation(lat, lon, 1)?.firstOrNull()?.let {
+                it.streetLabel() ?: it.placeName()
+            }
         } catch (e: IOException) {
             Log.w(TAG, "Geocoder sin respuesta: ${e.message}")
             null
@@ -131,7 +140,7 @@ object RouteNamer {
         // Salida y llegada suelen ser donde aparcas: lugar propio, si no la urbanización,
         // si no la calle, y solo al final el barrio o municipio
         fun parkingAt(p: RoutePoint): String? = knownPlaceAt(p.latitude, p.longitude)
-            ?: spotAt(p.latitude, p.longitude)?.let { it.urbanization ?: it.street }
+            ?: spotAt(p.latitude, p.longitude)?.label()
             ?: placeAt(p)
 
         val from = parkingAt(valid.first()) ?: return null
@@ -151,6 +160,10 @@ object RouteNamer {
             else -> "Ruta por $from"
         }
     }
+
+    /** Calle con su número si el Geocoder lo da; null si no hay calle. */
+    private fun Address.streetLabel(): String? =
+        thoroughfare?.takeIf { it.isNotBlank() }?.let { s -> subThoroughfare?.takeIf { it.isNotBlank() }?.let { "$s, $it" } ?: s }
 
     /** Barrio o urbanización si existe (p. ej. "Las Lagunas de Mijas"); si no, el municipio. */
     private fun Address.placeName(): String? = subLocality ?: locality ?: subAdminArea
