@@ -76,6 +76,9 @@ class DashboardFragment : Fragment() {
 
     private fun setupObservers() {
 
+        // Dónde está la moto: urbanización o calle, como en el nombre de la ruta
+        viewModel.currentPlace.observe(viewLifecycleOwner) { binding.tvPlace.text = it ?: "" }
+
         // Dirección de la marcha (N/S/E/O)
         viewModel.currentBearing.observe(viewLifecycleOwner) { updateHeading() }
         viewModel.compassHeading.observe(viewLifecycleOwner) { updateHeading() }

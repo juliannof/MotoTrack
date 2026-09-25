@@ -91,6 +91,24 @@ object RouteNamer {
     }
 
     /**
+     * Nombre del lugar en un punto, con la misma prioridad que en las rutas: lugar propio,
+     * urbanización, calle y, al final, barrio o municipio. Bloquea mientras consulta la
+     * red: llamar desde Dispatchers.IO. Null si no hay dato.
+     */
+    fun nameAt(context: Context, lat: Double, lon: Double): String? {
+        knownPlaceAt(lat, lon)?.let { return it }
+        spotAt(lat, lon)?.let { it.urbanization ?: it.street }?.let { return it }
+        if (!Geocoder.isPresent()) return null
+        return try {
+            @Suppress("DEPRECATION")
+            Geocoder(context, Locale.getDefault()).getFromLocation(lat, lon, 1)?.firstOrNull()?.placeName()
+        } catch (e: IOException) {
+            Log.w(TAG, "Geocoder sin respuesta: ${e.message}")
+            null
+        }
+    }
+
+    /**
      * Bloquea mientras consulta la red: llamar desde Dispatchers.IO.
      * Devuelve null si no hay geocoder, conexión o puntos válidos.
      */

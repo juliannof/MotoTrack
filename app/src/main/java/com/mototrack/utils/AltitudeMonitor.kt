@@ -48,6 +48,7 @@ class AltitudeMonitor(context: Context) {
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             result.lastLocation?.let { loc ->
+                PlaceTracker.update(appContext, loc.latitude, loc.longitude)
                 msl.ofOrNull(loc)?.let { TrackingService.currentAltitude.postValue(it) }
             }
         }

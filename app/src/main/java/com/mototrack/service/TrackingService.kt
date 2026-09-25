@@ -23,6 +23,7 @@ import kotlin.math.asin
 import kotlin.math.sin
 import com.mototrack.utils.Compass
 import com.mototrack.utils.MslAltitude
+import com.mototrack.utils.PlaceTracker
 import com.mototrack.utils.SpeedLimitCache
 import com.mototrack.ui.MainActivity
 import com.mototrack.utils.GpxExporter
@@ -133,6 +134,7 @@ class TrackingService : Service(), SensorEventListener {
         val currentAccel    = MutableLiveData(0f)        // m/s²
         val currentBearing  = MutableLiveData(0f)        // grados
         val compassHeading  = MutableLiveData<Float?>(null)   // rumbo por la brújula del móvil, sin GPS
+        val currentPlace    = MutableLiveData<String?>(null)  // urbanización o calle donde está la moto
         val currentAltitude = MutableLiveData(0.0)       // metros
         // Alturas extremas de la ruta en curso (m); NaN = todavía sin dato. Pueden ser
         // negativas: hay rutas que pasan por debajo del nivel del mar.
@@ -474,6 +476,7 @@ class TrackingService : Service(), SensorEventListener {
         currentSpeed.postValue(lastGpsSpeed)
         updateOverLimit()
         currentBearing.postValue(lastGpsBearing)
+        if (sourceOf(location) == "gps") PlaceTracker.update(this, location.latitude, location.longitude)
         currentAltitude.postValue(lastGpsAlt)
         val hi = maxAltitude.value ?: Double.NaN
         val lo = minAltitude.value ?: Double.NaN
