@@ -66,7 +66,7 @@
             android:layout_margin="8dp" />
 
                 <!-- Arriba y centrado con el número: dónde está la moto (urbanización o calle,
-                     como en el nombre de la ruta) y, justo encima de los dígitos, km/h -->
+                     como en el nombre de la ruta) -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -85,15 +85,18 @@
                         android:textColor="@color/accent_cyan"
                         android:textSize="14sp"
                         android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/tv_speed_unit"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="km/h"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="16sp" />
                 </LinearLayout>
+
+                <!-- km/h justo debajo del número, centrado con él -->
+                <TextView
+                    android:id="@+id/tv_speed_unit"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginBottom="8dp"
+                    android:text="km/h"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="16sp" />
 
                 <!-- Velocidad media, abajo a la derecha: mismo estilo que la máxima -->
                 <LinearLayout
