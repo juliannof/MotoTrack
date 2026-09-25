@@ -171,7 +171,7 @@ class TrackingService : Service(), SensorEventListener {
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
 
-    private val msl = MslAltitude()
+    private val msl by lazy { MslAltitude(this) }
 
     // ── Estado de ruta ────────────────────────────────────────────────────────
     private var activeRouteId: Long? = null

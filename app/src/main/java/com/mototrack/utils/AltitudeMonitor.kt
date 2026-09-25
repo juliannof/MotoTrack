@@ -22,12 +22,14 @@ class AltitudeMonitor(context: Context) {
     private val appContext = context.applicationContext
     private val fused = LocationServices.getFusedLocationProviderClient(appContext)
     private val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    private val msl = MslAltitude()
+    private val msl = MslAltitude(appContext)
     private var running = false
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { TrackingService.currentAltitude.postValue(msl.of(it)) }
+            result.lastLocation?.let { loc ->
+                msl.ofOrNull(loc)?.let { TrackingService.currentAltitude.postValue(it) }
+            }
         }
     }
 

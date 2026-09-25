@@ -77,7 +77,7 @@ class DashboardFragment : Fragment() {
 
         // Altura sobre el nivel del mar
         viewModel.currentAltitude.observe(viewLifecycleOwner) { alt ->
-            binding.tvAltitude.text = String.format("Alt: %.0f m", alt)
+            binding.tvAltitude.text = String.format("%.0f m", alt)
         }
 
         // Distancia
@@ -164,7 +164,7 @@ class DashboardFragment : Fragment() {
         binding.tvAccel.text = "+0.0"
         binding.accelMeter.reset()
         binding.tvDistance.text = "0.00 km"
-        binding.tvAltitude.text = "Alt: — m"
+        binding.tvAltitude.text = "— m"
         binding.leanMeter.reset()
     }
 
