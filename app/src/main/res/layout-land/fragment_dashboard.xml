@@ -324,11 +324,12 @@
             android:layout_marginBottom="26dp"
             android:orientation="vertical">
 
-            <!-- Botón INICIO/STOP, arriba a la derecha (bajo el rumbo) -->
+            <!-- Botón INICIO/STOP, a la derecha y justo por debajo de la orientación (O 286°) -->
             <Button
                 android:id="@+id/btn_record"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
+                android:layout_marginTop="72dp"
                 android:layout_marginBottom="8dp"
                 android:backgroundTint="@color/start_green"
                 android:text="▶ INICIAR RUTA"
