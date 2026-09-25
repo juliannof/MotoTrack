@@ -5,4 +5,8 @@
         android:id="@+id/action_dashboard_orientation"
         android:title="Cabina de Mando"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_logout"
+        android:title="Cerrar sesión"
+        app:showAsAction="never" />
 </menu>

@@ -17,12 +17,14 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
+import androidx.navigation.NavOptions
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.snackbar.Snackbar
 import com.mototrack.R
+import com.mototrack.auth.AuthRepository
 import com.mototrack.databinding.ActivityMainBinding
 import androidx.navigation.fragment.NavHostFragment
 
@@ -31,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     lateinit var viewModel: MainViewModel
     private var currentDestinationId: Int? = null
+    private val auth by lazy { AuthRepository(this) }
 
     private val requiredPermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -81,12 +84,18 @@ class MainActivity : AppCompatActivity() {
         // orientación aquí.
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         navController.addOnDestinationChangedListener { _, destination, _ ->
-            if (landscape && destination.id == R.id.nav_dashboard) supportActionBar?.hide()
+            if (destination.id == R.id.nav_login ||
+                (landscape && destination.id == R.id.nav_dashboard)) supportActionBar?.hide()
             else supportActionBar?.show()
             updateBottomNav(landscape, destination.id)
             currentDestinationId = destination.id
             applyDashboardMode()
             invalidateOptionsMenu()
+        }
+
+        // Sin sesión: pantalla de acceso (la pila queda solo con ella, "atrás" sale)
+        if (auth.currentUser() == null && navController.currentDestination?.id != R.id.nav_login) {
+            goToLogin(navController)
         }
 
         // Grabando en horizontal tampoco hace falta la barra inferior: más alto
@@ -96,9 +105,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun goToLogin(navController: androidx.navigation.NavController) {
+        navController.navigate(
+            R.id.nav_login, null,
+            NavOptions.Builder().setPopUpTo(R.id.nav_graph, true).build()
+        )
+    }
+
     private fun updateBottomNav(landscape: Boolean, destinationId: Int?) {
-        val hide = landscape && destinationId == R.id.nav_dashboard &&
-            viewModel.isRecording.value == true
+        val hide = destinationId == R.id.nav_login ||
+            (landscape && destinationId == R.id.nav_dashboard &&
+                viewModel.isRecording.value == true)
         binding.bottomNav.visibility = if (hide) View.GONE else View.VISIBLE
     }
 
@@ -150,16 +167,23 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         menu.findItem(R.id.action_dashboard_orientation)?.apply {
-            isVisible = currentDestinationId != R.id.nav_dashboard
+            isVisible = currentDestinationId != R.id.nav_dashboard &&
+                currentDestinationId != R.id.nav_login
             title = if (cockpitHorizontal()) "Cabina de Mando: Horizontal (cambiar a Vertical)"
             else "Cabina de Mando: Vertical (cambiar a Horizontal)"
         }
+        menu.findItem(R.id.action_logout)?.isVisible = currentDestinationId != R.id.nav_login
         return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == R.id.action_dashboard_orientation) {
             toggleCockpitOrientation()
+            return true
+        }
+        if (item.itemId == R.id.action_logout) {
+            auth.logout()
+            goToLogin(findNavController(R.id.nav_host_fragment))
             return true
         }
         return super.onOptionsItemSelected(item)
