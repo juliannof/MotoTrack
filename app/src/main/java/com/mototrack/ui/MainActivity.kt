@@ -1,14 +1,21 @@
 package com.mototrack.ui
 
 import android.Manifest
+import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
@@ -23,6 +30,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     lateinit var viewModel: MainViewModel
+    private var currentDestinationId: Int? = null
 
     private val requiredPermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -76,6 +84,9 @@ class MainActivity : AppCompatActivity() {
             if (landscape && destination.id == R.id.nav_dashboard) supportActionBar?.hide()
             else supportActionBar?.show()
             updateBottomNav(landscape, destination.id)
+            currentDestinationId = destination.id
+            applyDashboardMode()
+            invalidateOptionsMenu()
         }
 
         // Grabando en horizontal tampoco hace falta la barra inferior: más alto
@@ -91,6 +102,69 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNav.visibility = if (hide) View.GONE else View.VISIBLE
     }
 
+    private val prefs get() = getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
+
+    private fun cockpitHorizontal() = prefs.getString(PREF_COCKPIT_ORIENTATION, "vertical") == "horizontal"
+
+    /**
+     * Dashboard = cabina de mando: barras del sistema ocultas (se ven un momento
+     * al deslizar desde el borde y vuelven a esconderse solas) y, si el ajuste es
+     * Horizontal, orientación bloqueada en apaisado siguiendo el sensor para
+     * acertar con el lado. En el resto de pantallas todo vuelve a la normalidad.
+     */
+    private fun applyDashboardMode() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (currentDestinationId == R.id.nav_dashboard) {
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            requestedOrientation = if (cockpitHorizontal())
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    // Al minimizar y volver, o tras una notificación/diálogo del sistema, Android
+    // muestra las barras; al recuperar el foco se vuelven a ocultar.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyDashboardMode()
+    }
+
+    /** Alterna Horizontal/Vertical y lo aplica al momento. Devuelve true si queda Horizontal. */
+    fun toggleCockpitOrientation(): Boolean {
+        val horizontal = !cockpitHorizontal()
+        prefs.edit().putString(PREF_COCKPIT_ORIENTATION, if (horizontal) "horizontal" else "vertical").apply()
+        applyDashboardMode()
+        invalidateOptionsMenu()
+        return horizontal
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(R.id.action_dashboard_orientation)?.apply {
+            isVisible = currentDestinationId != R.id.nav_dashboard
+            title = if (cockpitHorizontal()) "Cabina de Mando: Horizontal (cambiar a Vertical)"
+            else "Cabina de Mando: Vertical (cambiar a Horizontal)"
+        }
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.action_dashboard_orientation) {
+            toggleCockpitOrientation()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
     private fun checkPermissions() {
         val missing = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -103,5 +177,9 @@ class MainActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         val navController = findNavController(R.id.nav_host_fragment)
         return navController.navigateUp() || super.onSupportNavigateUp()
+    }
+
+    companion object {
+        private const val PREF_COCKPIT_ORIENTATION = "cockpit_orientation"
     }
 }
