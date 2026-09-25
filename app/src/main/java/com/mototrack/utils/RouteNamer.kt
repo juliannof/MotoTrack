@@ -6,12 +6,15 @@ import android.location.Geocoder
 import android.location.Location
 import android.util.Log
 import com.mototrack.data.RoutePoint
+import org.json.JSONObject
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 
 /**
  * Pone a la ruta un nombre legible a partir de los lugares por los que pasa:
- * "De Marbella a Ojén por Mijas".
+ * "De Urbanización El Coto a Colegio Alemán de Málaga por Mijas".
  *
  * Usa el Geocoder de Android (dirección a partir de coordenadas), que
  * necesita conexión de datos. Sin red devuelve null y la ruta conserva
@@ -48,6 +51,45 @@ object RouteNamer {
             ?.first?.name
     }
 
+    private class Spot(val urbanization: String?, val street: String?)
+
+    private var lastNominatimMs = 0L
+
+    /**
+     * Urbanización y calle de un punto según OpenStreetMap (Nominatim). El Geocoder de
+     * Android da el barrio ("Las Lagunas de Mijas"), pero no la urbanización.
+     * Nominatim pide como mucho 1 consulta por segundo y un User-Agent propio.
+     */
+    @Synchronized
+    private fun spotAt(lat: Double, lon: Double): Spot? {
+        val wait = 1100 - (System.currentTimeMillis() - lastNominatimMs)
+        if (wait > 0) Thread.sleep(wait)
+        lastNominatimMs = System.currentTimeMillis()
+        val url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18" +
+            "&addressdetails=1&accept-language=es&lat=$lat&lon=$lon"
+        return try {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 5000
+                readTimeout = 7000
+                setRequestProperty("User-Agent", "MotoTrack/1.0 (Android)")
+            }
+            try {
+                if (conn.responseCode != 200) return null
+                val a = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                    .optJSONObject("address") ?: return null
+                fun tag(vararg keys: String) = keys.firstNotNullOfOrNull { k ->
+                    a.optString(k).takeIf { it.isNotBlank() }
+                }
+                Spot(urbanization = tag("residential", "neighbourhood"), street = tag("road"))
+            } finally {
+                conn.disconnect()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Nominatim sin respuesta: ${e.message}")
+            null
+        }
+    }
+
     /**
      * Bloquea mientras consulta la red: llamar desde Dispatchers.IO.
      * Devuelve null si no hay geocoder, conexión o puntos válidos.
@@ -68,8 +110,14 @@ object RouteNamer {
             null
         }
 
-        val from = placeAt(valid.first()) ?: return null
-        val to = placeAt(valid.last()) ?: return null
+        // Salida y llegada suelen ser donde aparcas: lugar propio, si no la urbanización,
+        // si no la calle, y solo al final el barrio o municipio
+        fun parkingAt(p: RoutePoint): String? = knownPlaceAt(p.latitude, p.longitude)
+            ?: spotAt(p.latitude, p.longitude)?.let { it.urbanization ?: it.street }
+            ?: placeAt(p)
+
+        val from = parkingAt(valid.first()) ?: return null
+        val to = parkingAt(valid.last()) ?: return null
 
         // "por …": el primer lugar intermedio distinto del origen y el destino
         val via = listOf(0.5, 0.25, 0.75)
