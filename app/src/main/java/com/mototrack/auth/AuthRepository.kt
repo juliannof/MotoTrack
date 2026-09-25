@@ -49,6 +49,11 @@ class AuthRepository(context: Context) {
         return null
     }
 
+    /** Sesión iniciada con Google; el token lo ha validado Google Play services en el dispositivo. */
+    fun startGoogleSession(email: String) {
+        prefs.edit().putString(KEY_SESSION, normalize(email)).apply()
+    }
+
     fun logout() {
         prefs.edit().remove(KEY_SESSION).apply()
     }
