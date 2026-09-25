@@ -77,6 +77,8 @@ class TrackingService : Service(), SensorEventListener {
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
+        // Por debajo de esto es ruido y vibración del móvil, no aceleración de marcha
+        private const val ACCEL_DEADBAND = 0.4f
 
         // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
         private const val LIMIT_QUERY_MIN_DISTANCE_M = 30f
@@ -146,6 +148,9 @@ class TrackingService : Service(), SensorEventListener {
     // Media de velocidad de la ruta (misma definición que la que se guarda: media de los puntos)
     private var speedSumKmh = 0.0
     private var speedSamples = 0
+    // Estado del filtro y valor que se muestra/guarda: el filtro sigue continuo y la
+    // zona muerta solo recorta lo que sale (parado no debe bailar entre +0.0 y -0.1)
+    private var accelFilter = 0f
     private var smoothedAccel = 0f
 
     // Consulta del límite de velocidad
@@ -237,6 +242,7 @@ class TrackingService : Service(), SensorEventListener {
         overSpeedLimit.postValue(false)
         speedSumKmh = 0.0
         speedSamples = 0
+        accelFilter = 0f
         smoothedAccel = 0f
         avgSpeed.postValue(0f)
         longitudinalAccel.postValue(0f)
@@ -433,7 +439,8 @@ class TrackingService : Service(), SensorEventListener {
             val north = rotMatrix[3] * a[0] + rotMatrix[4] * a[1] + rotMatrix[5] * a[2]
             east * fx + north * fy
         }
-        smoothedAccel += ACCEL_SMOOTHING * (forward - smoothedAccel)
+        accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
+        smoothedAccel = if (abs(accelFilter) < ACCEL_DEADBAND) 0f else accelFilter
         longitudinalAccel.postValue(smoothedAccel)
         // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
         if (smoothedAccel > (maxAccel.value ?: 0f)) maxAccel.postValue(smoothedAccel)
