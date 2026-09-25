@@ -94,6 +94,7 @@ class LoginFragment : Fragment() {
 
     /** Vaciar la pila: con la sesión iniciada, "atrás" no vuelve al login. */
     private fun enterApp() {
+        (requireActivity() as MainActivity).viewModel.onSessionChanged()
         findNavController().navigate(
             R.id.nav_dashboard, null,
             NavOptions.Builder().setPopUpTo(R.id.nav_graph, true).build()

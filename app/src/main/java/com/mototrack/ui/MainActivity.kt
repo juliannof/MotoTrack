@@ -63,6 +63,9 @@ class MainActivity : AppCompatActivity() {
 
         viewModel = ViewModelProvider(this)[MainViewModel::class.java]
 
+        // Rutas de antes de las cuentas: pasan a la sesión que ya esté abierta
+        viewModel.onSessionChanged()
+
         setupNavigation()
         checkPermissions()
     }
@@ -183,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (item.itemId == R.id.action_logout) {
             auth.logout()
+            viewModel.onSessionChanged()
             goToLogin(findNavController(R.id.nav_host_fragment))
             return true
         }

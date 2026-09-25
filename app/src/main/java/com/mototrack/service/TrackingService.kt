@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.mototrack.R
+import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
 import com.mototrack.ui.MainActivity
 import com.mototrack.utils.GpxExporter
@@ -223,6 +224,7 @@ class TrackingService : Service(), SensorEventListener {
         serviceScope.launch {
             val route = Route(
                 name = routeName,
+                ownerEmail = AuthRepository(this@TrackingService).currentUser() ?: "",
                 startTime = System.currentTimeMillis()
             )
             val id = db.routeDao().insertRoute(route)

@@ -12,6 +12,8 @@ data class Route(
     val id: Long = 0,
 
     val name: String,
+    // Correo de la cuenta dueña de la ruta ("" = grabada antes de existir las cuentas)
+    val ownerEmail: String = "",
     val startTime: Long,
     val endTime: Long = 0L,
 

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Route::class, RoutePoint::class],
-    version = 4,  // era 3
+    version = 5,  // era 4
     exportSchema = false
 )
 abstract class MotoTrackDatabase : RoomDatabase() {
@@ -43,6 +43,13 @@ abstract class MotoTrackDatabase : RoomDatabase() {
             }
         }
 
+        /** v4 -> v5: cada ruta pertenece a una cuenta. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE routes ADD COLUMN ownerEmail TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MotoTrackDatabase? = null
 
@@ -52,7 +59,7 @@ abstract class MotoTrackDatabase : RoomDatabase() {
                     context.applicationContext,
                     MotoTrackDatabase::class.java,
                     "mototrack_database"
-                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4).build()
+                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
                 INSTANCE = instance
                 instance
             }
