@@ -17,6 +17,9 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import android.location.Location
 import com.mototrack.utils.HeatTrail
+import com.mototrack.utils.RainForecast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.mototrack.R
@@ -327,6 +330,7 @@ class DashboardFragment : Fragment() {
             it?.let {
                 moveMap(it)
                 if (viewModel.isRecording.value == true) addTrailPoint(it, viewModel.currentSpeed.value ?: 0f)
+                refreshRain(it)
             }
         }
     }
@@ -335,6 +339,45 @@ class DashboardFragment : Fragment() {
         val map = googleMap ?: return
         val camera = CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
         if (!mapCentered) { map.moveCamera(camera); mapCentered = true } else map.animateCamera(camera)
+    }
+
+    // ── ¿Va a llover? ──────────────────────────────────────────────────────────────
+    // Previsión de las próximas horas en la posición actual; se renueva cada 15 min con el
+    // Dashboard a la vista y se muestra bajo el nombre del lugar.
+
+    private var lastRainFetchMs = 0L
+    private var rainFetching = false
+
+    private fun refreshRain(p: DoubleArray) {
+        val now = SystemClock.elapsedRealtime()
+        if (rainFetching || (lastRainFetchMs != 0L && now - lastRainFetchMs < RAIN_REFRESH_MS)) return
+        rainFetching = true
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { RainForecast.fetch(p[0], p[1]) }
+            rainFetching = false
+            // Si falla, se conserva lo que hubiera y se reintenta con la siguiente posición
+            if (result is RainForecast.Result.Ok) {
+                lastRainFetchMs = SystemClock.elapsedRealtime()
+                showRain(result)
+            }
+        }
+    }
+
+    private fun showRain(r: RainForecast.Result.Ok) {
+        val tv = _binding?.tvRain ?: return
+        val (text, icon, color) = when {
+            r.raining -> Triple("Lloviendo ahora", R.drawable.ic_weather_rain, R.color.accent_cyan)
+            r.hoursToRain == 0 -> Triple("Lluvia en esta hora · ${r.maxProbPct} %", R.drawable.ic_weather_rain, R.color.accent_cyan)
+            r.hoursToRain != null -> Triple("Lluvia en ${r.hoursToRain} h · ${r.maxProbPct} %", R.drawable.ic_weather_rain, R.color.accent_cyan)
+            else -> Triple("Sin lluvia prevista (3 h)", R.drawable.ic_weather_sun, R.color.text_secondary)
+        }
+        val tint = ContextCompat.getColor(requireContext(), color)
+        // Icono de una sola tinta, del mismo color que el texto
+        val drawable = ContextCompat.getDrawable(requireContext(), icon)?.mutate()?.apply { setTint(tint) }
+        tv.setCompoundDrawablesRelativeWithIntrinsicBounds(drawable, null, null, null)
+        tv.text = text
+        tv.setTextColor(tint)
+        tv.visibility = View.VISIBLE
     }
 
     // ── Trazado en vivo con mapa de calor ──────────────────────────────────────────
@@ -481,6 +524,7 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val MAP_ZOOM = 16f
+        private const val RAIN_REFRESH_MS = 15 * 60_000L
         private const val TRAIL_MIN_STEP_M = 4f
         private const val TRAIL_REDRAW_MS = 1_000L
         private const val AUTO_REARM_KMH = 2f

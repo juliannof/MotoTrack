@@ -107,6 +107,18 @@
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
+                <!-- ¿Va a llover donde estoy? (previsión de las próximas horas) -->
+                <TextView
+                    android:id="@+id/tv_rain"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:drawablePadding="6dp"
+                        android:gravity="center_vertical"
+                        android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
                 <com.mototrack.ui.SpeedDigitsView
                     android:id="@+id/tv_speed"
                     android:layout_width="match_parent"

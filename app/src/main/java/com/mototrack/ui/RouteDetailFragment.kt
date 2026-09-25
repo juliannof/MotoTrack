@@ -215,13 +215,16 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    /** Mapa de calor de la velocidad respecto a la velocidad máxima de la ruta. */
+    /** Manchas de calor de fondo más la línea de colores por velocidad; la leyenda da la máxima de la ruta. */
     private fun drawHeatLine(map: GoogleMap, points: List<RoutePoint>) {
         val valid = points.filter { it.latitude != 0.0 || it.longitude != 0.0 }
         val maxSpeed = valid.maxOfOrNull { it.speedKmh }?.takeIf { it > 1f } ?: 1f
         binding.heatLegend.visibility = View.VISIBLE
         binding.tvHeatMax.text = String.format("%.0f km/h", maxSpeed)
-        HeatTrail.draw(map, valid.map { LatLng(it.latitude, it.longitude) }, valid.map { it.speedKmh }, maxSpeed)
+        val latLngs = valid.map { LatLng(it.latitude, it.longitude) }
+        val speeds = valid.map { it.speedKmh }
+        HeatTrail.drawHeatmap(map, latLngs, speeds)          // manchas de fondo
+        HeatTrail.draw(map, latLngs, speeds, maxSpeed, overBlobs = true)       // y encima la línea de colores
     }
 
     private fun setupCharts(points: List<RoutePoint>) {

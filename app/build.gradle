@@ -68,6 +68,7 @@ dependencies {
     // Google Maps
     implementation 'com.google.android.gms:play-services-maps:18.2.0'
     implementation 'com.google.android.gms:play-services-location:21.1.0'
+    implementation 'com.google.maps.android:android-maps-utils:3.8.2'   // mapa de calor (HeatmapTileProvider)
 
     // Acceso con Google (Credential Manager; no requiere Firebase)
     implementation 'androidx.credentials:credentials:1.2.2'
