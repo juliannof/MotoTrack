@@ -174,7 +174,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_weight="0.55"
             android:layout_marginBottom="6dp"
             app:cardBackgroundColor="@color/surface"
             app:cardCornerRadius="12dp"
@@ -265,7 +265,7 @@
                 <!-- Vúmetro vertical: arriba acelera, abajo frena -->
                 <com.mototrack.ui.AccelMeterView
                     android:id="@+id/accel_meter"
-                    android:layout_width="26dp"
+                    android:layout_width="32dp"
                     android:layout_height="match_parent" />
 
                 <LinearLayout
