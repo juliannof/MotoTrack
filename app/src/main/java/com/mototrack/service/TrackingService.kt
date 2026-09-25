@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.*
 import android.location.*
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.*
 import android.util.Log
 import java.util.Locale
@@ -17,6 +19,7 @@ import androidx.lifecycle.MutableLiveData
 import com.mototrack.R
 import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
+import com.mototrack.utils.SpeedLimitCache
 import com.mototrack.ui.MainActivity
 import com.mototrack.utils.GpxExporter
 import com.mototrack.utils.RouteNamer
@@ -74,13 +77,21 @@ class TrackingService : Service(), SensorEventListener {
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
 
-        private const val LIMIT_QUERY_MIN_DISTANCE_M = 100f
-        private const val LIMIT_QUERY_MIN_INTERVAL_MS = 8_000L
+        // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
+        private const val LIMIT_QUERY_MIN_DISTANCE_M = 30f
+        private const val LIMIT_QUERY_MIN_INTERVAL_MS = 4_000L
+        // Si Overpass falla (504, sin datos), esperar antes de insistir
+        private const val LIMIT_FAIL_BACKOFF_MS = 10_000L
+
+        // Aviso al rebasar el límite: margen del GPS, y cada cuánto se repite el pitido
+        private const val OVER_LIMIT_TOLERANCE_KMH = 3f
+        private const val OVER_LIMIT_REPEAT_MS = 15_000L
 
         // LiveData compartida para la UI
         val currentSpeed    = MutableLiveData(0f)        // km/h
         val currentSpeedLimit = MutableLiveData(0)       // km/h de la vía; 0 = desconocido
         val speedLimitEstimated = MutableLiveData(false) // true: deducido del tipo de vía
+        val overSpeedLimit  = MutableLiveData(false)     // true: por encima del límite (+ margen)
         val avgSpeed        = MutableLiveData(0f)        // km/h, media de la ruta en curso
         val longitudinalAccel = MutableLiveData(0f)      // m/s²: + acelerando, - frenando (sentido de la marcha)
         val currentLean     = MutableLiveData(0f)        // grados (valor absoluto)
@@ -140,6 +151,13 @@ class TrackingService : Service(), SensorEventListener {
     private var limitQueryLocation: Location? = null
     private var limitQueryTimeMs = 0L
     private var limitQueryInFlight = false
+    private val limitLock = Any()
+
+    // Límite vigente. Se conserva cuando una vía no trae dato: se sigue con el último conocido
+    @Volatile private var knownLimit = 0
+    private var overLimit = false
+    private var lastOverAlertMs = 0L
+    private var toneGenerator: ToneGenerator? = null
     private var lastGpsSpeed = 0f
     private var lastGpsBearing = 0f
     private var restingAngleOffset = 0f
@@ -192,6 +210,8 @@ class TrackingService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         stopTracking()
+        toneGenerator?.release()
+        toneGenerator = null
         serviceScope.cancel()
     }
 
@@ -209,6 +229,9 @@ class TrackingService : Service(), SensorEventListener {
         maxLean.postValue(0f)
         currentSpeedLimit.postValue(0)
         speedLimitEstimated.postValue(false)
+        knownLimit = 0
+        overLimit = false
+        overSpeedLimit.postValue(false)
         speedSumKmh = 0.0
         speedSamples = 0
         smoothedAccel = 0f
@@ -361,6 +384,7 @@ class TrackingService : Service(), SensorEventListener {
         avgSpeed.postValue((speedSumKmh / speedSamples).toFloat())
 
         currentSpeed.postValue(lastGpsSpeed)
+        updateOverLimit()
         currentBearing.postValue(lastGpsBearing)
         currentAltitude.postValue(lastGpsAlt)
 
@@ -407,35 +431,82 @@ class TrackingService : Service(), SensorEventListener {
         longitudinalAccel.postValue(smoothedAccel)
     }
 
-    /** Pregunta el límite de la vía cada ~100 m (y no más de una vez cada 8 s). */
+    /**
+     * Límite de la vía: primero la caché local (instantánea) y solo si el tramo
+     * no se conoce, Overpass (con pausa mínima entre consultas).
+     */
     private fun updateSpeedLimit(location: Location) {
-        if (limitQueryInFlight || sourceOf(location) != "gps" || lastGpsSpeed < 3f) return
-        val now = SystemClock.elapsedRealtime()
-        val prev = limitQueryLocation
-        if (prev != null &&
-            (now - limitQueryTimeMs < LIMIT_QUERY_MIN_INTERVAL_MS ||
-                prev.distanceTo(location) < LIMIT_QUERY_MIN_DISTANCE_M)
-        ) return
-
-        limitQueryInFlight = true
-        limitQueryLocation = location
-        limitQueryTimeMs = now
+        if (sourceOf(location) != "gps" || lastGpsSpeed < 3f) return
         val bearing = if (location.hasBearing() && lastGpsSpeed > 10f) location.bearing else null
 
         serviceScope.launch {
+            val cacheDao = db.speedLimitCacheDao()
+            SpeedLimitCache.get(cacheDao, location.latitude, location.longitude, bearing)?.let {
+                applyLimit(it)
+                return@launch
+            }
+
+            val now = SystemClock.elapsedRealtime()
+            synchronized(limitLock) {
+                val prev = limitQueryLocation
+                if (limitQueryInFlight) return@launch
+                if (prev != null &&
+                    (now - limitQueryTimeMs < LIMIT_QUERY_MIN_INTERVAL_MS ||
+                        prev.distanceTo(location) < LIMIT_QUERY_MIN_DISTANCE_M)
+                ) return@launch
+                limitQueryInFlight = true
+                limitQueryLocation = location
+                limitQueryTimeMs = now
+            }
+
             try {
                 when (val r = SpeedLimitProvider.fetch(location.latitude, location.longitude, bearing)) {
-                    // Vía encontrada: si no trae límite, mejor "desconocido" que el de la vía anterior
                     is SpeedLimitProvider.Result.Ok -> {
-                        speedLimitEstimated.postValue(r.estimated)
-                        currentSpeedLimit.postValue(r.limitKmh ?: 0)
+                        SpeedLimitCache.put(cacheDao, location.latitude, location.longitude, bearing, r)
+                        applyLimit(r)
                     }
-                    // Sin red: se conserva el último valor
-                    SpeedLimitProvider.Result.Failed -> Unit
+                    // Sin red o servidor ocupado: se conserva el último valor y se espera antes de insistir
+                    SpeedLimitProvider.Result.Failed ->
+                        synchronized(limitLock) { limitQueryTimeMs = SystemClock.elapsedRealtime() + LIMIT_FAIL_BACKOFF_MS }
                 }
             } finally {
-                limitQueryInFlight = false
+                synchronized(limitLock) { limitQueryInFlight = false }
             }
+        }
+    }
+
+    /** Vía sin dato ni estimación: se sigue con el último límite conocido. */
+    private fun applyLimit(r: SpeedLimitProvider.Result.Ok) {
+        val limit = r.limitKmh ?: return
+        knownLimit = limit
+        speedLimitEstimated.postValue(r.estimated)
+        currentSpeedLimit.postValue(limit)
+        updateOverLimit()
+    }
+
+    /** Marca el exceso de velocidad y pita al rebasar el límite (y cada 15 s mientras dure). */
+    @Synchronized
+    private fun updateOverLimit() {
+        val limit = knownLimit
+        val over = limit > 0 && lastGpsSpeed > limit + OVER_LIMIT_TOLERANCE_KMH
+        if (over != overLimit) overSpeedLimit.postValue(over)
+        if (over) {
+            val now = SystemClock.elapsedRealtime()
+            if (!overLimit || now - lastOverAlertMs >= OVER_LIMIT_REPEAT_MS) {
+                lastOverAlertMs = now
+                beep()
+            }
+        }
+        overLimit = over
+    }
+
+    private fun beep() {
+        try {
+            val tone = toneGenerator
+                ?: ToneGenerator(AudioManager.STREAM_MUSIC, 100).also { toneGenerator = it }
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "No se pudo reproducir el aviso: ${e.message}")
         }
     }
 

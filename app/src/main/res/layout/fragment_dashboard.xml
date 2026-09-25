@@ -70,6 +70,7 @@
                     android:fontFamily="sans-serif-condensed" />
 
                 <TextView
+                    android:id="@+id/tv_speed_unit"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="km/h"

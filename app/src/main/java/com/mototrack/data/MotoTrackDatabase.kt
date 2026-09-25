@@ -8,13 +8,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Route::class, RoutePoint::class],
-    version = 5,  // era 4
+    entities = [Route::class, RoutePoint::class, SpeedLimitCacheEntry::class],
+    version = 6,  // era 5
     exportSchema = false
 )
 abstract class MotoTrackDatabase : RoomDatabase() {
 
     abstract fun routeDao(): RouteDao
+    abstract fun speedLimitCacheDao(): SpeedLimitCacheDao
 
     companion object {
         /**
@@ -50,6 +51,15 @@ abstract class MotoTrackDatabase : RoomDatabase() {
             }
         }
 
+        /** v5 -> v6: caché local de límites de velocidad. */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `speed_limit_cache` (`cellKey` TEXT NOT NULL, " +
+                    "`limitKmh` INTEGER NOT NULL, `estimated` INTEGER NOT NULL, `fetchedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`cellKey`))")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MotoTrackDatabase? = null
 
@@ -59,7 +69,7 @@ abstract class MotoTrackDatabase : RoomDatabase() {
                     context.applicationContext,
                     MotoTrackDatabase::class.java,
                     "mototrack_database"
-                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
                 INSTANCE = instance
                 instance
             }

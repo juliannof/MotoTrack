@@ -33,14 +33,19 @@ class DashboardFragment : Fragment() {
         setupButtons()
     }
 
-    /** Señal con el límite; si lo superas, la señal se tiñe de rojo claro. */
+    /** Señal con el límite; si lo superas, la señal, la velocidad y "km/h" se ponen en rojo. */
     private fun updateSpeedLimitSign() {
         val limit = viewModel.currentSpeedLimit.value ?: 0
-        val speed = viewModel.currentSpeed.value ?: 0f
-        val exceeded = limit > 0 && speed > limit + SPEED_LIMIT_TOLERANCE_KMH
+        val exceeded = viewModel.overSpeedLimit.value ?: false
         binding.speedLimitSign.setEstimated(viewModel.speedLimitEstimated.value ?: false)
         binding.speedLimitSign.setLimit(limit)
         binding.speedLimitSign.setExceeded(exceeded)
+
+        val color = ContextCompat.getColor(
+            requireContext(), if (exceeded) R.color.over_limit_red else R.color.text_primary)
+        binding.tvSpeed.setTextColor(color)
+        binding.tvSpeedUnit.setTextColor(
+            if (exceeded) color else ContextCompat.getColor(requireContext(), R.color.text_secondary))
     }
 
     private fun setupObservers() {
@@ -54,6 +59,7 @@ class DashboardFragment : Fragment() {
         // Límite de la vía (OpenStreetMap)
         viewModel.currentSpeedLimit.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
         viewModel.speedLimitEstimated.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
+        viewModel.overSpeedLimit.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
 
         // Vúmetro: necesita el signo para saber hacia qué lado encender
         viewModel.currentLeanSigned.observe(viewLifecycleOwner) { lean ->
@@ -157,10 +163,5 @@ class DashboardFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
-    }
-
-    private companion object {
-        // Margen antes de avisar de exceso (el GPS y el límite no son exactos)
-        const val SPEED_LIMIT_TOLERANCE_KMH = 3f
     }
 }

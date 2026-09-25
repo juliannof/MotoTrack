@@ -38,7 +38,9 @@ object SpeedLimitProvider {
     /** Bloquea mientras consulta la red: llamar desde Dispatchers.IO. */
     fun fetch(lat: Double, lon: Double, bearing: Float?): Result {
         val query = "[out:json][timeout:6];" +
-            "way(around:$SEARCH_RADIUS_M,$lat,$lon)[highway];out tags geom;"
+            "way(around:$SEARCH_RADIUS_M,$lat,$lon)[highway]" +
+            "[highway!~\"^(footway|path|cycleway|steps|pedestrian|track|bridleway|corridor|proposed|construction|platform)$\"];" +
+            "out tags geom;"
         return try {
             val conn = (URL("$ENDPOINT?data=${URLEncoder.encode(query, "UTF-8")}")
                 .openConnection() as HttpURLConnection).apply {
@@ -75,7 +77,11 @@ object SpeedLimitProvider {
             val way = elements.getJSONObject(i)
             val tags = way.optJSONObject("tags") ?: continue
             val explicit = parseMaxspeed(tags.optString("maxspeed"))
-            val limit = explicit ?: estimateFromHighway(tags.optString("highway"))
+                ?: parseMaxspeed(tags.optString("zone:maxspeed"))
+                ?: parseMaxspeed(tags.optString("maxspeed:type"))
+            val urban = tags.optString("lit") == "yes" ||
+                tags.optString("sidewalk").let { it.isNotEmpty() && it != "no" && it != "none" }
+            val limit = explicit ?: estimateFromHighway(tags.optString("highway"), urban)
             val geom = way.optJSONArray("geometry") ?: continue
 
             // Segmento más cercano a nuestra posición (plano local en metros)
@@ -101,7 +107,9 @@ object SpeedLimitProvider {
 
             // Las vías son de doble sentido: vale el rumbo igual o el opuesto
             var score = minDist
-            if (explicit == null) score += 15   // ante empate, gana la vía con dato real
+            // Ante empate gana la vía con dato real; una vía sin límite ni estimación
+            // (servicio, sin clasificar…) no debe tapar a la carretera de al lado
+            if (explicit == null) score += if (limit != null) 10 else 25
             if (bearing != null) {
                 val diff = abs(((bearing - segBearing + 540) % 360) - 180)  // 0..180
                 val offAxis = minOf(diff, 180 - diff)                       // 0..90
@@ -118,11 +126,16 @@ object SpeedLimitProvider {
     /**
      * Límite genérico en España según el tipo de vía, cuando OSM no trae `maxspeed`.
      * Es una estimación: por eso la señal se muestra distinta.
+     *
+     * Prudente a propósito: `tertiary` y `unclassified` pueden ser tanto una
+     * carretera de 90 como una calle de 30 o 50, y adivinar 90 daba avisos falsos
+     * (visto en las rutas 39 y 40). Ahí es mejor "sin dato". Si la vía tiene
+     * alumbrado o acera, es travesía: como mucho 50.
      */
-    internal fun estimateFromHighway(highway: String?): Int? = when (highway) {
+    internal fun estimateFromHighway(highway: String?, urban: Boolean = false): Int? = when (highway) {
         "motorway", "motorway_link" -> 120
-        "trunk" -> 100
-        "primary", "secondary", "tertiary" -> 90
+        "trunk" -> if (urban) 50 else 100
+        "primary", "secondary" -> if (urban) 50 else 90
         "residential", "living_street" -> 30
         else -> null
     }
@@ -132,6 +145,8 @@ object SpeedLimitProvider {
         val v = raw?.trim()?.lowercase() ?: return null
         v.toIntOrNull()?.let { return it }
         Regex("""^(\d+)\s*mph$""").find(v)?.let { return (it.groupValues[1].toInt() * 1.609).toInt() }
+        // "ES:30" (zone:maxspeed): el número tras el código de país
+        Regex("""^[a-z]{2}:(\d{2,3})$""").find(v)?.let { return it.groupValues[1].toInt() }
         return when {
             v.endsWith(":zone30") -> 30
             v.endsWith(":urban") -> 50
