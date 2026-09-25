@@ -466,7 +466,7 @@
 
                     <com.mototrack.ui.AltitudeMeterView
                         android:id="@+id/altitude_meter"
-                        android:layout_width="32dp"
+                        android:layout_width="70dp"
                         android:layout_height="match_parent" />
 
                     <LinearLayout

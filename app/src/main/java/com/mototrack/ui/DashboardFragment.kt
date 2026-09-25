@@ -192,19 +192,14 @@ class DashboardFragment : Fragment() {
     }
 
     /**
-     * Escala de la altura mínima a la máxima de la ruta (valen negativas): el último
-     * LED es la máxima y el primero la mínima. Sin ruta en curso, con la moto parada
-     * o sin desnivel que mostrar, se encienden todos.
+     * Vúmetro de altura: el primer LED es "bajo el nivel del mar"; del segundo al último,
+     * de 0 m a la máxima de la ruta (último LED, con su número marcado). Sin ruta en curso
+     * la máxima es la altura actual.
      */
     private fun updateAltitudeMeter() {
         val alt = viewModel.currentAltitude.value ?: return
-        val hi = viewModel.maxAltitude.value ?: Double.NaN
-        val lo = viewModel.minAltitude.value ?: Double.NaN
-        val recording = viewModel.isRecording.value == true
-        val stopped = (viewModel.currentSpeed.value ?: 0f) < 1f
-        val flat = hi.isNaN() || lo.isNaN() || hi - lo < MIN_ALTITUDE_RANGE_M
-        val fraction = if (!recording || stopped || flat) 1f else ((alt - lo) / (hi - lo)).toFloat()
-        binding.altitudeMeter.setFraction(fraction)
+        val routeMax = viewModel.maxAltitude.value ?: Double.NaN
+        binding.altitudeMeter.set(alt, if (routeMax.isNaN()) alt else maxOf(routeMax, alt))
     }
 
     private fun showCalibration(status: CalibrationStatus) {
@@ -295,8 +290,6 @@ class DashboardFragment : Fragment() {
     }
 
     private companion object {
-        // Por debajo de este desnivel la escala no dice nada: se enciende todo
-        const val MIN_ALTITUDE_RANGE_M = 2.0
 
         // Referencia del vúmetro de distancia mientras no haya ninguna ruta terminada
         const val DEFAULT_DISTANCE_REFERENCE_KM = 50f
