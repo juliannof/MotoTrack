@@ -179,17 +179,15 @@ class DashboardFragment : Fragment() {
     }
 
     /**
-     * Último LED = la ruta terminada más larga. Sin ruta en curso, con la moto
-     * parada o sin ninguna ruta de referencia, se encienden todos.
+     * Último LED = la ruta terminada más larga (o 50 km si aún no hay ninguna). Sin distancia
+     * recorrida el vúmetro está vacío; se llena según avanzas, esté la moto en marcha o parada.
      */
     private fun updateDistanceMeter() {
         val km = viewModel.distanceKm.value ?: 0f
         val longest = viewModel.allRoutes.value.orEmpty()
             .filter { it.isCompleted }.maxOfOrNull { it.distanceKm } ?: 0f
-        val recording = viewModel.isRecording.value == true
-        val stopped = (viewModel.currentSpeed.value ?: 0f) < 1f
-        val fraction = if (!recording || stopped || longest <= 0f) 1f else km / longest
-        binding.distanceMeter.setFraction(fraction)
+        val reference = if (longest > 0f) longest else DEFAULT_DISTANCE_REFERENCE_KM
+        binding.distanceMeter.setFraction(if (km <= 0f) 0f else km / reference)
     }
 
     /**
@@ -298,6 +296,9 @@ class DashboardFragment : Fragment() {
     private companion object {
         // Por debajo de este desnivel la escala no dice nada: se enciende todo
         const val MIN_ALTITUDE_RANGE_M = 2.0
+
+        // Referencia del vúmetro de distancia mientras no haya ninguna ruta terminada
+        const val DEFAULT_DISTANCE_REFERENCE_KM = 50f
 
         // Ocho puntos, con O de Oeste
         val CARDINALS = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")

@@ -203,13 +203,14 @@
                         android:textSize="12sp" />
                 </LinearLayout>
 
-                <!-- Indicador de grabación: esquina de la tarjeta, sin quitar espacio -->
+                <!-- Indicador de grabación: justo debajo de la señal del límite -->
                 <LinearLayout
                     android:id="@+id/recording_indicator"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|start"
-                    android:layout_margin="10dp"
+                    android:layout_gravity="top|start"
+                    android:layout_marginStart="26dp"
+                    android:layout_marginTop="88dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:visibility="gone">

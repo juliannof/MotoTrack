@@ -12,8 +12,7 @@ import kotlin.math.min
 /**
  * Vúmetro horizontal de distancia, con la misma lógica que el de altura: el último
  * LED es la ruta más larga que has hecho y la distancia actual enciende los LEDs de
- * izquierda a derecha hasta su proporción. Con la moto parada, o sin ruta de
- * referencia, se encienden todos.
+ * izquierda a derecha hasta su proporción. Sin distancia recorrida está vacío.
  *
  * Igual que LeanMeterView, dibujamos a mano en un Canvas.
  */
@@ -22,8 +21,8 @@ class DistanceMeterView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    // 0..1: parte de la ruta más larga que llevas recorrida
-    private var fraction = 1f
+    // 0..1: parte de la ruta más larga que llevas recorrida (0 = nada recorrido: vúmetro vacío)
+    private var fraction = 0f
 
     private val density = resources.displayMetrics.density
     private val ledPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -64,8 +63,8 @@ class DistanceMeterView @JvmOverloads constructor(
         val top = paddingTop + (h - ledH) / 2f
         val radius = ledW * 0.4f
 
-        // El primer LED siempre encendido; el último es la ruta más larga
-        val litCount = (1 + fraction * (leds - 1) + 0.5f).toInt().coerceIn(1, leds)
+        // Sin distancia recorrida no se enciende ninguno; el último LED es la ruta más larga
+        val litCount = (fraction * leds + 0.5f).toInt().coerceIn(0, leds)
 
         for (i in 0 until leds) {
             val left = paddingLeft + i * (ledW + gap)
