@@ -203,6 +203,24 @@
                         android:textSize="12sp" />
                 </LinearLayout>
 
+                <!-- Pop-up informativo: la ruta arranca sola al detectar movimiento -->
+                <TextView
+                    android:id="@+id/tv_auto_start_popup"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:background="@drawable/popup_bg"
+                    android:gravity="center"
+                    android:paddingStart="24dp"
+                    android:paddingTop="14dp"
+                    android:paddingEnd="24dp"
+                    android:paddingBottom="14dp"
+                    android:text="● Movimiento detectado\nRuta iniciada automáticamente"
+                    android:textColor="@color/text_primary"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
                 <!-- Indicador de grabación: justo debajo de la señal del límite -->
                 <LinearLayout
                     android:id="@+id/recording_indicator"

@@ -3,6 +3,8 @@ package com.mototrack.ui
 import android.app.AlertDialog
 import android.content.res.Configuration
 import android.os.Bundle
+import android.util.Log
+import android.os.SystemClock
 import android.view.*
 import android.widget.EditText
 import androidx.core.content.ContextCompat
@@ -27,6 +29,10 @@ class DashboardFragment : Fragment() {
     private lateinit var viewModel: MainViewModel
     private var altitudeMonitor: AltitudeMonitor? = null
     private var googleMap: GoogleMap? = null
+
+    // Arranque automático de la ruta al detectar movimiento (armado hasta que arranca; se rearma al parar)
+    private var autoStartArmed = true
+    private var autoStartBlockedUntilMs = 0L
     private var mapCentered = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -321,14 +327,59 @@ class DashboardFragment : Fragment() {
         if (!mapCentered) { map.moveCamera(camera); mapCentered = true } else map.animateCamera(camera)
     }
 
+    // ── Inicio automático de la ruta ───────────────────────────────────────────────
+    // Con el Dashboard a la vista y sin grabar, la ruta arranca sola en cuanto llega cualquier
+    // señal de movimiento desde parado (GPS, aceleración o inclinación). Un pop-up avisa al
+    // usuario (no pide nada). Al arrancar se desarma y se rearma cuando la moto se para; tras
+    // detener una ruta hay una pausa, para que manipular el móvil no la reinicie.
+
+    private fun onIdleSpeed(kmh: Float) {
+        if (kmh < AUTO_REARM_KMH) autoStartArmed = true
+    }
+
+    private fun onMotionDetected(reason: String) {
+        if (viewModel.isRecording.value == true || !autoStartArmed) return
+        if (SystemClock.elapsedRealtime() < autoStartBlockedUntilMs) return
+        autoStartArmed = false
+        Log.i("Dashboard", "Movimiento detectado ($reason): la ruta arranca sola")
+        startRouteAutomatically()
+    }
+
+    /** Pop-up informativo (no pide nada): aparece con un fundido y se va solo a los 4 s. */
+    private fun showAutoStartPopup() {
+        _binding?.tvAutoStartPopup?.let { popup ->
+            popup.alpha = 0f
+            popup.visibility = View.VISIBLE
+            popup.animate().alpha(1f).setDuration(250).start()
+            popup.postDelayed({
+                _binding?.tvAutoStartPopup?.animate()?.alpha(0f)?.setDuration(400)?.withEndAction {
+                    _binding?.tvAutoStartPopup?.visibility = View.GONE
+                }?.start()
+            }, AUTO_START_POPUP_MS)
+        }
+    }
+
+    private fun startRouteAutomatically() {
+        // Mismo nombre por defecto que propone el diálogo manual: al terminar se renombra con los lugares
+        val name = "Ruta ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}"
+        viewModel.startTracking(name)
+        showAutoStartPopup()
+    }
+
     // La altura se mantiene al día con el Dashboard a la vista y sin grabar;
     // grabando la da el servicio, y fuera del Dashboard no se gasta GPS.
     override fun onStart() {
         super.onStart()
         binding.dashboardMap?.onStart()
         val monitor = altitudeMonitor ?: AltitudeMonitor(requireContext()).also { altitudeMonitor = it }
+        monitor.onSpeed = ::onIdleSpeed
+        monitor.onMotion = ::onMotionDetected
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
-            if (recording) monitor.stop() else monitor.start()
+            if (recording) monitor.stop() else {
+                // Ruta detenida: pausa antes de poder volver a arrancar sola
+                autoStartBlockedUntilMs = SystemClock.elapsedRealtime() + AUTO_START_COOLDOWN_MS
+                monitor.start()
+            }
         }
     }
 
@@ -368,6 +419,9 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val MAP_ZOOM = 16f
+        private const val AUTO_REARM_KMH = 2f
+        private const val AUTO_START_COOLDOWN_MS = 60_000L
+        private const val AUTO_START_POPUP_MS = 4_000L
 
         // Ocho puntos, con O de Oeste
         val CARDINALS = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
