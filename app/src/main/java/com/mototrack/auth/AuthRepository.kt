@@ -32,6 +32,7 @@ class AuthRepository(context: Context) {
         prefs.edit()
             .putString(userKey(id), encode(salt) + ":" + encode(hash(password, salt)))
             .putString(KEY_SESSION, id)
+            .remove(KEY_NAME).remove(KEY_PHOTO)
             .apply()
         return null
     }
@@ -45,17 +46,27 @@ class AuthRepository(context: Context) {
         val expected = decode(stored[1])
         if (!MessageDigest.isEqual(expected, hash(password, decode(stored[0])))) return error
 
-        prefs.edit().putString(KEY_SESSION, id).apply()
+        prefs.edit().putString(KEY_SESSION, id).remove(KEY_NAME).remove(KEY_PHOTO).apply()
         return null
     }
 
     /** Sesión iniciada con Google; el token lo ha validado Google Play services en el dispositivo. */
-    fun startGoogleSession(email: String) {
-        prefs.edit().putString(KEY_SESSION, normalize(email)).apply()
+    fun startGoogleSession(email: String, name: String?, photoUrl: String?) {
+        prefs.edit()
+            .putString(KEY_SESSION, normalize(email))
+            .putString(KEY_NAME, name)
+            .putString(KEY_PHOTO, photoUrl)
+            .apply()
     }
 
+    /** Nombre para mostrar: el de Google, o la parte local del correo. */
+    fun displayName(): String? =
+        prefs.getString(KEY_NAME, null) ?: currentUser()?.substringBefore('@')
+
+    fun photoUrl(): String? = prefs.getString(KEY_PHOTO, null)
+
     fun logout() {
-        prefs.edit().remove(KEY_SESSION).apply()
+        prefs.edit().remove(KEY_SESSION).remove(KEY_NAME).remove(KEY_PHOTO).apply()
     }
 
     private fun normalize(email: String) = email.trim().lowercase()
@@ -71,6 +82,8 @@ class AuthRepository(context: Context) {
 
     private companion object {
         const val KEY_SESSION = "session_email"
+        const val KEY_NAME = "session_name"
+        const val KEY_PHOTO = "session_photo"
         const val MIN_PASSWORD = 6
         const val ITERATIONS = 120_000
         val EMAIL_REGEX = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")

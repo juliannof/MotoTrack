@@ -74,7 +74,8 @@ class LoginFragment : Fragment() {
                 if (credential is CustomCredential &&
                     credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
                 ) {
-                    auth.startGoogleSession(GoogleIdTokenCredential.createFrom(credential.data).id)
+                    val google = GoogleIdTokenCredential.createFrom(credential.data)
+                    auth.startGoogleSession(google.id, google.displayName, google.profilePictureUri?.toString())
                     enterApp()
                 } else {
                     showError("No se pudo iniciar sesión con Google")

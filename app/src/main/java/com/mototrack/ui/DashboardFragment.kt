@@ -5,7 +5,6 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.view.*
 import android.widget.EditText
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -118,16 +117,6 @@ class DashboardFragment : Fragment() {
     }
 
     private fun setupButtons() {
-        // Pulsación larga sobre la velocidad: alterna la orientación de la cabina
-        binding.tvSpeed.setOnLongClickListener {
-            val horizontal = (requireActivity() as MainActivity).toggleCockpitOrientation()
-            Toast.makeText(
-                requireContext(),
-                if (horizontal) "Cabina de Mando: Horizontal" else "Cabina de Mando: Vertical",
-                Toast.LENGTH_SHORT
-            ).show()
-            true
-        }
         binding.btnRecord.setOnClickListener {
             if (viewModel.isRecording.value == true) {
                 viewModel.stopTracking()

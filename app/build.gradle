@@ -74,6 +74,9 @@ dependencies {
     implementation 'androidx.credentials:credentials-play-services-auth:1.2.2'
     implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.0'
 
+    // Carga de la foto de perfil
+    implementation 'io.coil-kt:coil:2.5.0'
+
     // Charts
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
 
