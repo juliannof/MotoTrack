@@ -30,7 +30,13 @@ object SpeedLimitProvider {
          * Vía encontrada. limitKmh es null si no hay dato ni estimación;
          * estimated indica que sale del tipo de vía y no de un `maxspeed`.
          */
-        data class Ok(val limitKmh: Int?, val estimated: Boolean = false) : Result
+        data class Ok(
+            val limitKmh: Int?,
+            val estimated: Boolean = false,
+            // Trazado de la vía elegida ([lat, lon] por vértice): permite rellenar la caché
+            // a lo largo de toda la vía y no solo en el punto consultado
+            val path: List<DoubleArray>? = null
+        ) : Result
         /** Sin red / servidor ocupado: conviene conservar el último valor. */
         object Failed : Result
     }
@@ -71,6 +77,7 @@ object SpeedLimitProvider {
         val elements = json.optJSONArray("elements") ?: return Result.Ok(null)
         val kx = cos(Math.toRadians(lat))
         var best: Result.Ok = Result.Ok(null)
+        var bestGeom: org.json.JSONArray? = null
         var bestScore = Double.MAX_VALUE
 
         for (i in 0 until elements.length()) {
@@ -118,9 +125,14 @@ object SpeedLimitProvider {
             if (score < bestScore) {
                 bestScore = score
                 best = Result.Ok(limit, estimated = explicit == null && limit != null)
+                bestGeom = geom
             }
         }
-        return best
+        val geom = bestGeom ?: return best
+        return best.copy(path = (0 until geom.length()).map {
+            val p = geom.getJSONObject(it)
+            doubleArrayOf(p.getDouble("lat"), p.getDouble("lon"))
+        })
     }
 
     /**

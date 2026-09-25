@@ -23,4 +23,8 @@ interface SpeedLimitCacheDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entry: SpeedLimitCacheEntry)
+
+    /** Relleno a lo largo de la vía: no pisa lo ya consultado en un punto exacto. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun putAllIfAbsent(entries: List<SpeedLimitCacheEntry>)
 }

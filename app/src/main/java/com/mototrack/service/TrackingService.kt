@@ -19,6 +19,8 @@ import androidx.lifecycle.MutableLiveData
 import com.mototrack.R
 import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
+import kotlin.math.asin
+import kotlin.math.sin
 import com.mototrack.utils.MslAltitude
 import com.mototrack.utils.SpeedLimitCache
 import com.mototrack.ui.MainActivity
@@ -104,6 +106,15 @@ class TrackingService : Service(), SensorEventListener {
         // Si Overpass falla (504, sin datos), esperar antes de insistir
         private const val LIMIT_FAIL_BACKOFF_MS = 10_000L
 
+        // Búsqueda anticipada: mirar la vía por delante para tener el límite ya en la caché
+        // al llegar (a 90 km/h, esperar 3 s a Overpass son 75 m de retraso)
+        private const val AHEAD_SECONDS = 8.0
+        private const val AHEAD_MIN_M = 100.0
+        private const val AHEAD_MAX_M = 350.0
+        private const val AHEAD_MIN_SPEED_KMH = 10f
+        private const val AHEAD_MIN_DISTANCE_M = 60f
+        private const val AHEAD_MIN_INTERVAL_MS = 5_000L
+
         // Aviso al rebasar el límite: margen del GPS, y cada cuánto se repite el pitido
         private const val OVER_LIMIT_TOLERANCE_KMH = 3f
         private const val OVER_LIMIT_REPEAT_MS = 15_000L
@@ -177,9 +188,14 @@ class TrackingService : Service(), SensorEventListener {
     private var smoothedAccel = 0f
 
     // Consulta del límite de velocidad
-    private var limitQueryLocation: Location? = null
-    private var limitQueryTimeMs = 0L
-    private var limitQueryInFlight = false
+    /** Estado de una consulta de límite a Overpass: en curso, cuándo y dónde fue la última. */
+    private class LimitSlot {
+        var inFlight = false
+        var timeMs = 0L
+        var loc: Location? = null
+    }
+    private val hereSlot = LimitSlot()    // el punto en el que estoy
+    private val aheadSlot = LimitSlot()   // la vía que tengo por delante
     private val limitLock = Any()
 
     // Límite vigente. Se conserva cuando una vía no trae dato: se sigue con el último conocido
@@ -291,7 +307,8 @@ class TrackingService : Service(), SensorEventListener {
         calibrationStatus.postValue(CalibrationStatus.WAITING)
         avgSpeed.postValue(0f)
         longitudinalAccel.postValue(0f)
-        limitQueryLocation = null
+        hereSlot.loc = null
+        aheadSlot.loc = null
         maxLeanLeft.postValue(0f)
         maxLeanRight.postValue(0f)
         maxAccel.postValue(0f)
@@ -519,41 +536,73 @@ class TrackingService : Service(), SensorEventListener {
      */
     private fun updateSpeedLimit(location: Location) {
         if (sourceOf(location) != "gps" || lastGpsSpeed < 3f) return
-        val bearing = if (location.hasBearing() && lastGpsSpeed > 10f) location.bearing else null
+        val bearing = if (location.hasBearing() && lastGpsSpeed > AHEAD_MIN_SPEED_KMH) location.bearing else null
 
         serviceScope.launch {
             val cacheDao = db.speedLimitCacheDao()
-            SpeedLimitCache.get(cacheDao, location.latitude, location.longitude, bearing)?.let {
-                applyLimit(it)
-                return@launch
-            }
 
-            val now = SystemClock.elapsedRealtime()
-            synchronized(limitLock) {
-                val prev = limitQueryLocation
-                if (limitQueryInFlight) return@launch
-                if (prev != null &&
-                    (now - limitQueryTimeMs < LIMIT_QUERY_MIN_INTERVAL_MS ||
-                        prev.distanceTo(location) < LIMIT_QUERY_MIN_DISTANCE_M)
-                ) return@launch
-                limitQueryInFlight = true
-                limitQueryLocation = location
-                limitQueryTimeMs = now
-            }
+            // 1) Donde estoy: caché (instantánea) y solo si no se conoce, la red
+            val cached = SpeedLimitCache.get(cacheDao, location.latitude, location.longitude, bearing)
+            if (cached != null) applyLimit(cached)
+            else fetchLimit(cacheDao, location, bearing, hereSlot, apply = true, LIMIT_QUERY_MIN_DISTANCE_M, LIMIT_QUERY_MIN_INTERVAL_MS)
 
-            try {
-                when (val r = SpeedLimitProvider.fetch(location.latitude, location.longitude, bearing)) {
-                    is SpeedLimitProvider.Result.Ok -> {
-                        SpeedLimitCache.put(cacheDao, location.latitude, location.longitude, bearing, r)
-                        applyLimit(r)
-                    }
-                    // Sin red o servidor ocupado: se conserva el último valor y se espera antes de insistir
-                    SpeedLimitProvider.Result.Failed ->
-                        synchronized(limitLock) { limitQueryTimeMs = SystemClock.elapsedRealtime() + LIMIT_FAIL_BACKOFF_MS }
+            // 2) La vía de delante: si su límite no está en la caché, se pide ya para tenerlo
+            //    cuando lleguemos. Sin prisa: la consulta de aquí tiene prioridad.
+            if (bearing != null && !hereSlot.inFlight) {
+                val metres = (lastGpsSpeed / 3.6 * AHEAD_SECONDS).coerceIn(AHEAD_MIN_M, AHEAD_MAX_M)
+                val ahead = pointAhead(location, bearing, metres)
+                if (SpeedLimitCache.get(cacheDao, ahead.latitude, ahead.longitude, bearing) == null) {
+                    fetchLimit(cacheDao, ahead, bearing, aheadSlot, apply = false, AHEAD_MIN_DISTANCE_M, AHEAD_MIN_INTERVAL_MS)
                 }
-            } finally {
-                synchronized(limitLock) { limitQueryInFlight = false }
             }
+        }
+    }
+
+    /** Punto a [metres] metros de [from] en la dirección [bearing]. */
+    private fun pointAhead(from: Location, bearing: Float, metres: Double): Location {
+        val d = metres / 6_371_000.0
+        val br = Math.toRadians(bearing.toDouble())
+        val lat1 = Math.toRadians(from.latitude)
+        val lon1 = Math.toRadians(from.longitude)
+        val lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(br))
+        val lon2 = lon1 + atan2(sin(br) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2))
+        return Location("ahead").apply {
+            latitude = Math.toDegrees(lat2)
+            longitude = Math.toDegrees(lon2)
+        }
+    }
+
+    /**
+     * Consulta el límite a Overpass en [at] y lo guarda en la caché: en el punto exacto y a
+     * lo largo de la vía. Con [apply] lo muestra ya; sin él (búsqueda anticipada) solo lo
+     * deja guardado. Pausa mínima entre consultas del mismo hueco y espera si el servidor falla.
+     */
+    private suspend fun fetchLimit(
+        dao: SpeedLimitCacheDao, at: Location, bearing: Float?, slot: LimitSlot,
+        apply: Boolean, minDistanceM: Float, minIntervalMs: Long
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        synchronized(limitLock) {
+            val prev = slot.loc
+            if (slot.inFlight) return
+            if (prev != null && (now - slot.timeMs < minIntervalMs || prev.distanceTo(at) < minDistanceM)) return
+            slot.inFlight = true
+            slot.loc = at
+            slot.timeMs = now
+        }
+        try {
+            when (val r = SpeedLimitProvider.fetch(at.latitude, at.longitude, bearing)) {
+                is SpeedLimitProvider.Result.Ok -> {
+                    SpeedLimitCache.put(dao, at.latitude, at.longitude, bearing, r)
+                    SpeedLimitCache.putAlong(dao, at.latitude, at.longitude, r)
+                    if (apply) applyLimit(r)
+                }
+                // Sin red o servidor ocupado: se conserva el último valor y se espera antes de insistir
+                SpeedLimitProvider.Result.Failed ->
+                    synchronized(limitLock) { slot.timeMs = SystemClock.elapsedRealtime() + LIMIT_FAIL_BACKOFF_MS }
+            }
+        } finally {
+            synchronized(limitLock) { slot.inFlight = false }
         }
     }
 
