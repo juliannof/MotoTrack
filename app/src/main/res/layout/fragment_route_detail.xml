@@ -31,12 +31,14 @@
             android:layout_marginBottom="16dp" />
 
         <!-- Stats grid -->
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
             app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="12dp">
+            app:cardCornerRadius="12dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="1dp">
 
             <GridLayout
                 android:layout_width="match_parent"
@@ -88,18 +90,20 @@
                 </LinearLayout>
 
             </GridLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Mapa del recorrido -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Recorrido" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="260dp"
             android:layout_marginBottom="16dp"
             app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="12dp">
+            app:cardCornerRadius="12dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="1dp">
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -118,6 +122,38 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent" />
 
+                <!-- Leyenda del mapa de calor: velocidad de lento (verde) a rápido (rojo) -->
+                <LinearLayout
+                    android:id="@+id/heat_legend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="8dp"
+                    android:background="#CC1A1A1A"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="6dp"
+                    android:visibility="gone">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+                    <View
+                        android:layout_width="80dp"
+                        android:layout_height="8dp"
+                        android:layout_marginStart="6dp"
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/heat_gradient" />
+                    <TextView
+                        android:id="@+id/tv_heat_max"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
                 <TextView
                     android:id="@+id/tv_map_empty"
                     android:layout_width="wrap_content"
@@ -130,9 +166,9 @@
                     android:textSize="13sp"
                     android:visibility="gone" />
             </FrameLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
 
-        <!-- Gráfica velocidad -->
+        <!-- Gráficas, siempre en este orden: velocidad, aceleración, ángulo lateral, altura -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Velocidad" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
@@ -143,9 +179,18 @@
             android:layout_marginBottom="16dp"
             android:background="@color/surface"/>
 
-        <!-- Gráfica lean angle -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Lean Angle" android:textColor="@color/text_primary"
+            android:text="Aceleración" android:textColor="@color/text_primary"
+            android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <com.github.mikephil.charting.charts.LineChart
+            android:id="@+id/chart_accel"
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:layout_marginBottom="16dp"
+            android:background="@color/surface"/>
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Ángulo lateral" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/chart_lean"
@@ -154,12 +199,11 @@
             android:layout_marginBottom="16dp"
             android:background="@color/surface"/>
 
-        <!-- Gráfica aceleración -->
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Aceleración" android:textColor="@color/text_primary"
+            android:text="Altura del terreno" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
         <com.github.mikephil.charting.charts.LineChart
-            android:id="@+id/chart_accel"
+            android:id="@+id/chart_elevation"
             android:layout_width="match_parent"
             android:layout_height="160dp"
             android:layout_marginBottom="24dp"

@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.*
 import android.location.*
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.*
 import android.util.Log
 import java.util.Locale
@@ -15,10 +17,18 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.mototrack.R
+import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
+import kotlin.math.asin
+import kotlin.math.sin
+import com.mototrack.utils.Compass
+import com.mototrack.utils.MslAltitude
+import com.mototrack.utils.PlaceTracker
+import com.mototrack.utils.SpeedLimitCache
 import com.mototrack.ui.MainActivity
 import com.mototrack.utils.GpxExporter
 import com.mototrack.utils.RouteNamer
+import com.mototrack.utils.SpeedLimitProvider
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -54,21 +64,92 @@ class TrackingService : Service(), SensorEventListener {
         // Clave nueva: los offsets guardados con el cálculo antiguo (roll de
         // getOrientation) no valen para la inclinación lateral actual
         private const val PREF_LEAN_OFFSET = "resting_lean_offset"
+        // Una moto no pasa de ~65° de inclinación; más allá es ruido de orientación
+        private const val MAX_PLAUSIBLE_LEAN_DEG = 70f
+        // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
+        private const val MIN_SCREEN_VERTICALITY = 0.5f
+
+        // Autocalibración del cero de inclinación (moto derecha). Lo mejor es hacerlo parado,
+        // pero solo tras haber recorrido una distancia mínima: así se sabe que el móvil va
+        // montado en la moto y no en la mano o sobre una mesa. Ventana de 3 s con el ángulo
+        // estable. Una vez por ruta.
+        private const val CALIB_MIN_DISTANCE_M = 200f
+        private const val CALIB_STOPPED_SPEED_KMH = 1f
+        private const val CALIB_WINDOW_MS = 3_000L
+        // Marcha en recta: rodando >15 km/h, sin fuerza lateral y con el rumbo GPS estable.
+        // Rodando recto la moto va derecha, así que su ángulo medio es una referencia del
+        // cero independiente de la parada: si el ángulo parado difiere más de 4°, la moto
+        // estaba ladeada (pie en el suelo, caballete) y esa parada no vale para calibrar.
+        private const val STRAIGHT_MIN_SPEED_KMH = 15f
+        private const val STRAIGHT_MAX_LATERAL_MS2 = 0.5f
+        private const val STRAIGHT_MAX_BEARING_DELTA_DEG = 4f
+        private const val STRAIGHT_MIN_TIME_MS = 3_000L
+        private const val STRAIGHT_MAX_FIX_AGE_S = 1.6
+        private const val CALIB_MAX_DIFF_FROM_STRAIGHT_DEG = 4f
+        private const val LATERAL_SMOOTHING = 0.02f
+        private const val CALIB_MAX_STD_DEG = 0.5
+        // Una inclinación del soporte mayor que esto no es del soporte: se ignora
+        private const val CALIB_MAX_OFFSET_DEG = 15f
+
+        // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
+        // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
+        private const val ACCEL_SMOOTHING = 0.1f
+
+        // Velocidad "caducada": sin fix nuevo, ver startStaleSpeedWatchdog
+        private const val STALE_FIX_STOPPED_S = 2.5
+        private const val STALE_FIX_SLOW_KMH = 15f
+        private const val STALE_FIX_LOST_S = 8.0
+        // Por debajo de esto es ruido y vibración del móvil, no aceleración de marcha
+        private const val ACCEL_DEADBAND = 0.4f
+
+        // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
+        private const val LIMIT_QUERY_MIN_DISTANCE_M = 30f
+        private const val LIMIT_QUERY_MIN_INTERVAL_MS = 4_000L
+        // Si Overpass falla (504, sin datos), esperar antes de insistir
+        private const val LIMIT_FAIL_BACKOFF_MS = 10_000L
+
+        // Búsqueda anticipada: mirar la vía por delante para tener el límite ya en la caché
+        // al llegar (a 90 km/h, esperar 3 s a Overpass son 75 m de retraso)
+        private const val AHEAD_SECONDS = 8.0
+        private const val AHEAD_MIN_M = 100.0
+        private const val AHEAD_MAX_M = 350.0
+        private const val AHEAD_MIN_SPEED_KMH = 10f
+        private const val BEARING_MIN_SPEED_KMH = 5f
+        private const val AHEAD_MIN_DISTANCE_M = 60f
+        private const val AHEAD_MIN_INTERVAL_MS = 5_000L
+
+        // Aviso al rebasar el límite: margen del GPS, y cada cuánto se repite el pitido
+        private const val OVER_LIMIT_TOLERANCE_KMH = 3f
+        private const val OVER_LIMIT_REPEAT_MS = 15_000L
 
         // LiveData compartida para la UI
         val currentSpeed    = MutableLiveData(0f)        // km/h
+        val currentSpeedLimit = MutableLiveData(0)       // km/h de la vía; 0 = desconocido
+        val speedLimitEstimated = MutableLiveData(false) // true: deducido del tipo de vía
+        val calibrationStatus = MutableLiveData(CalibrationStatus.OFF) // calibración del cero de inclinación
+        val overSpeedLimit  = MutableLiveData(false)     // true: por encima del límite (+ margen)
+        val avgSpeed        = MutableLiveData(0f)        // km/h, media de la ruta en curso
+        val longitudinalAccel = MutableLiveData(0f)      // m/s²: + acelerando, - frenando (sentido de la marcha)
         val currentLean     = MutableLiveData(0f)        // grados (valor absoluto)
         val currentLeanSigned = MutableLiveData(0f)      // grados: - izquierda, + derecha
         val currentAccel    = MutableLiveData(0f)        // m/s²
         val currentBearing  = MutableLiveData(0f)        // grados
+        val compassHeading  = MutableLiveData<Float?>(null)   // rumbo por la brújula del móvil, sin GPS
+        val currentPlace    = MutableLiveData<String?>(null)  // urbanización o calle donde está la moto
         val currentAltitude = MutableLiveData(0.0)       // metros
+        // Alturas extremas de la ruta en curso (m); NaN = todavía sin dato. Pueden ser
+        // negativas: hay rutas que pasan por debajo del nivel del mar.
+        val minAltitude     = MutableLiveData(Double.NaN)
+        val maxAltitude     = MutableLiveData(Double.NaN)
         val isRecording     = MutableLiveData(false)
         val currentRouteId  = MutableLiveData<Long?>(null)
         val pointCount      = MutableLiveData(0)
 
         // Estadísticas en tiempo real
         val maxSpeed        = MutableLiveData(0f)
-        val maxLean         = MutableLiveData(0f)
+        val maxLean         = MutableLiveData(0f)        // máximo de ambos lados
+        val maxLeanLeft     = MutableLiveData(0f)
+        val maxLeanRight    = MutableLiveData(0f)
         val maxAccel        = MutableLiveData(0f)
         val distanceKm      = MutableLiveData(0f)
     }
@@ -102,13 +183,55 @@ class TrackingService : Service(), SensorEventListener {
         }
     }
     private var lastLocation: Location? = null
-    private var lastGpsSpeed = 0f
+
+    // Media de velocidad de la ruta (misma definición que la que se guarda: media de los puntos)
+    private var speedSumKmh = 0.0
+    private var speedSamples = 0
+    // Estado del filtro y valor que se muestra/guarda: el filtro sigue continuo y la
+    // zona muerta solo recorta lo que sale (parado no debe bailar entre +0.0 y -0.1)
+    private var accelFilter = 0f
+    private var smoothedAccel = 0f
+
+    // Consulta del límite de velocidad
+    /** Estado de una consulta de límite a Overpass: en curso, cuándo y dónde fue la última. */
+    private class LimitSlot {
+        var inFlight = false
+        var timeMs = 0L
+        var loc: Location? = null
+    }
+    private val hereSlot = LimitSlot()    // el punto en el que estoy
+    private val aheadSlot = LimitSlot()   // la vía que tengo por delante
+    private val limitLock = Any()
+
+    // Límite vigente. Se conserva cuando una vía no trae dato: se sigue con el último conocido
+    @Volatile private var knownLimit = 0
+    private var overLimit = false
+    private var lastOverAlertMs = 0L
+    private var toneGenerator: ToneGenerator? = null
+    @Volatile private var lastGpsSpeed = 0f
+    private var staleSpeedJob: Job? = null
     private var lastGpsBearing = 0f
     private var restingAngleOffset = 0f
     private var rawLeanAngle = 0f
-    private val calibrationBuffer = mutableListOf<Float>()
+    // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
+    private var stillStartMs = 0L
+    private var stillN = 0
+    // Detector de marcha en recta y ángulo medio rodando recto (referencia del cero)
+    @Volatile private var lateralAccelMean = 0f
+    @Volatile private var bearingSteady = false
+    private var prevBearing = Float.NaN
+    private var straightSinceMs = 0L
+    private var straightLeanRef = Float.NaN
+    private var straightRefSum = 0.0
+    private var straightRefN = 0
+    // Ya se calibró en esta ruta (una vez por ruta)
+    private var calibratedThisRide = false
+    private var stillSum = 0.0
+    private var stillSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
+
+    private val msl by lazy { MslAltitude(this) }
 
     // ── Estado de ruta ────────────────────────────────────────────────────────
     private var activeRouteId: Long? = null
@@ -150,6 +273,8 @@ class TrackingService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         stopTracking()
+        toneGenerator?.release()
+        toneGenerator = null
         serviceScope.cancel()
     }
 
@@ -165,6 +290,32 @@ class TrackingService : Service(), SensorEventListener {
         pointsRecorded = 0
         maxSpeed.postValue(0f)
         maxLean.postValue(0f)
+        currentSpeedLimit.postValue(0)
+        speedLimitEstimated.postValue(false)
+        knownLimit = 0
+        overLimit = false
+        overSpeedLimit.postValue(false)
+        speedSumKmh = 0.0
+        speedSamples = 0
+        accelFilter = 0f
+        smoothedAccel = 0f
+        maxAltitude.postValue(Double.NaN)
+        minAltitude.postValue(Double.NaN)
+        calibratedThisRide = false
+        straightSinceMs = 0L
+        straightLeanRef = Float.NaN
+        straightRefSum = 0.0
+        straightRefN = 0
+        prevBearing = Float.NaN
+        bearingSteady = false
+        stillN = 0
+        calibrationStatus.postValue(CalibrationStatus.WAITING)
+        avgSpeed.postValue(0f)
+        longitudinalAccel.postValue(0f)
+        hereSlot.loc = null
+        aheadSlot.loc = null
+        maxLeanLeft.postValue(0f)
+        maxLeanRight.postValue(0f)
         maxAccel.postValue(0f)
         distanceKm.postValue(0f)
 
@@ -172,12 +323,14 @@ class TrackingService : Service(), SensorEventListener {
         serviceScope.launch {
             val route = Route(
                 name = routeName,
+                ownerEmail = AuthRepository(this@TrackingService).currentUser() ?: "",
                 startTime = System.currentTimeMillis()
             )
             val id = db.routeDao().insertRoute(route)
             activeRouteId = id
             currentRouteId.postValue(id)
             isRecording.postValue(true)
+            startStaleSpeedWatchdog()
 
             trackingStartMs = System.currentTimeMillis()
             signalLost = false
@@ -193,16 +346,19 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     private fun stopTracking() {
+        calibrationStatus.postValue(CalibrationStatus.OFF)
         // Se llama desde DETENER y otra vez desde onDestroy: solo la primera
         // vez hay ruta que cerrar
         val routeId = activeRouteId
         activeRouteId = null
 
+        staleSpeedJob?.cancel()
+        staleSpeedJob = null
         sensorLogger?.stop()
         sensorLogger = null
         if (routeId != null) {
             Log.i(TAG, "Ruta $routeId detenida: $pointsRecorded puntos, ${fmt(totalDistance)} km, " +
-                "máx ${fmt(maxSpeed.value ?: 0f)} km/h, inclinación máx ${fmt(maxLean.value ?: 0f)}°")
+                "máx ${fmt(maxSpeed.value ?: 0f)} km/h, inclinación máx izq ${fmt(maxLeanLeft.value ?: 0f)}° / der ${fmt(maxLeanRight.value ?: 0f)}°")
         }
 
         unregisterSensors()
@@ -216,6 +372,8 @@ class TrackingService : Service(), SensorEventListener {
             val distance = totalDistance
             val maxSpeedKmh = maxSpeed.value ?: 0f
             val maxLeanAngle = maxLean.value ?: 0f
+            val maxLeanLeftDeg = maxLeanLeft.value ?: 0f
+            val maxLeanRightDeg = maxLeanRight.value ?: 0f
             val maxAcceleration = maxAccel.value ?: 0f
 
             // NonCancellable: stopSelf() dispara onDestroy, que cancela
@@ -240,6 +398,8 @@ class TrackingService : Service(), SensorEventListener {
                         maxSpeedKmh = maxSpeedKmh,
                         avgSpeedKmh = avgSpeed,
                         maxLeanAngle = maxLeanAngle,
+                        maxLeanLeft = maxLeanLeftDeg,
+                        maxLeanRight = maxLeanRightDeg,
                         maxAcceleration = maxAcceleration,
                         isCompleted = true
                     )
@@ -263,6 +423,8 @@ class TrackingService : Service(), SensorEventListener {
                 .setMinUpdateDistanceMeters(1f)                                          // mínimo 1 metro
                 .build()
             fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+            (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
+                .addNmeaListener(msl.nmeaListener, Handler(Looper.getMainLooper()))
         } catch (e: SecurityException) {
             Log.e(TAG, "GPS permission denied: ${e.message}")
         }
@@ -270,6 +432,7 @@ class TrackingService : Service(), SensorEventListener {
 
     private fun unregisterGps() {
         fusedClient.removeLocationUpdates(locationCallback)
+        (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeNmeaListener(msl.nmeaListener)
     }
 
     private fun onLocationChanged(location: Location) {
@@ -295,13 +458,31 @@ class TrackingService : Service(), SensorEventListener {
         }
 
         lastGpsSpeed   = location.speed * 3.6f   // m/s → km/h
+        // Rumbo estable entre fixes: dato del detector de marcha en recta
+        bearingSteady = if (location.hasBearing() && lastGpsSpeed >= STRAIGHT_MIN_SPEED_KMH &&
+            !prevBearing.isNaN()
+        ) {
+            val d = abs(((location.bearing - prevBearing + 540f) % 360f) - 180f)
+            d < STRAIGHT_MAX_BEARING_DELTA_DEG
+        } else false
+        prevBearing = if (location.hasBearing()) location.bearing else Float.NaN
         lastGpsBearing = location.bearing
-        lastGpsAlt     = location.altitude
+        lastGpsAlt     = msl.of(location)
         lastLocation   = location
 
+        speedSumKmh += lastGpsSpeed
+        speedSamples++
+        avgSpeed.postValue((speedSumKmh / speedSamples).toFloat())
+
         currentSpeed.postValue(lastGpsSpeed)
+        updateOverLimit()
         currentBearing.postValue(lastGpsBearing)
+        if (sourceOf(location) == "gps") PlaceTracker.update(this, location.latitude, location.longitude)
         currentAltitude.postValue(lastGpsAlt)
+        val hi = maxAltitude.value ?: Double.NaN
+        val lo = minAltitude.value ?: Double.NaN
+        if (hi.isNaN() || lastGpsAlt > hi) maxAltitude.postValue(lastGpsAlt)
+        if (lo.isNaN() || lastGpsAlt < lo) minAltitude.postValue(lastGpsAlt)
 
         if (lastGpsSpeed > (maxSpeed.value ?: 0f)) {
             maxSpeed.postValue(lastGpsSpeed)
@@ -310,31 +491,188 @@ class TrackingService : Service(), SensorEventListener {
         // Guardar punto
         savePoint(location)
 
-
-        // Auto-calibración a baja velocidad
-        if (lastGpsSpeed < 20f) {
-            calibrationBuffer.add(rawLeanAngle)
-            if (calibrationBuffer.size > 30) calibrationBuffer.removeAt(0)
-            if (calibrationBuffer.size >= 10) {
-                val avg = calibrationBuffer.average().toFloat()
-                val stdDev = calibrationBuffer.map { (it - avg) * (it - avg) }
-                    .average().let { Math.sqrt(it).toFloat() }
-                if (stdDev < 2.0f) {
-                    if (abs(avg - restingAngleOffset) > 0.5f) {
-                        Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(avg)}°")
-                    }
-                    restingAngleOffset = avg
-                    getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
-                        .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
-                }
-            }
-        } else {
-            calibrationBuffer.clear()
-        }
+        updateSpeedLimit(location)
 
 
         // Actualizar notificación
         updateNotification()
+    }
+
+    /**
+     * Aceleración en el sentido de la marcha (+ acelerando, - frenando).
+     *
+     * Con el móvil en el manillar y la pantalla mirando al piloto (la misma
+     * suposición que el cálculo de inclinación), "adelante" es la normal de la
+     * pantalla en sentido contrario, proyectada en horizontal. Pasamos la
+     * aceleración del móvil al sistema del mundo (x = este, y = norte) con la
+     * matriz de rotación y nos quedamos con la parte que apunta hacia delante.
+     * La fuerza lateral de las curvas es perpendicular y no entra; la gravedad
+     * es vertical y tampoco. No necesita GPS, así que funciona parado.
+     */
+    private fun updateLongitudinalAccel(a: FloatArray) {
+        // Eje z del móvil (sale de la pantalla, hacia el piloto) en coordenadas del mundo
+        val zx = rotMatrix[2]
+        val zy = rotMatrix[5]
+        val horiz = hypot(zx, zy)
+
+        // Móvil tumbado (pantalla hacia arriba): no hay "adelante" definido
+        var lateral = 0f
+        val forward = if (horiz < MIN_SCREEN_VERTICALITY) 0f else {
+            val fx = -zx / horiz
+            val fy = -zy / horiz
+            val east  = rotMatrix[0] * a[0] + rotMatrix[1] * a[1] + rotMatrix[2] * a[2]
+            val north = rotMatrix[3] * a[0] + rotMatrix[4] * a[1] + rotMatrix[5] * a[2]
+            // Perpendicular a "adelante": la fuerza de las curvas
+            lateral = east * fy - north * fx
+            east * fx + north * fy
+        }
+        // Media CON signo: la vibración del motor se compensa y queda ~0; una curva mantiene
+        // la fuerza lateral un buen rato. (La media del valor absoluto nunca baja de ~0,6.)
+        lateralAccelMean += LATERAL_SMOOTHING * (lateral - lateralAccelMean)
+        accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
+        smoothedAccel = if (abs(accelFilter) < ACCEL_DEADBAND) 0f else accelFilter
+        longitudinalAccel.postValue(smoothedAccel)
+        // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
+        if (smoothedAccel > (maxAccel.value ?: 0f)) maxAccel.postValue(smoothedAccel)
+    }
+
+    /**
+     * Límite de la vía: primero la caché local (instantánea) y solo si el tramo
+     * no se conoce, Overpass (con pausa mínima entre consultas).
+     */
+    private fun updateSpeedLimit(location: Location) {
+        if (sourceOf(location) != "gps" || lastGpsSpeed < 3f) return
+        // El rumbo decide qué vía es la nuestra al cruzar otra (una autovía por debajo o por encima
+        // va a 90° y se descarta); el GPS lo da con fiabilidad desde unos 5 km/h
+        val bearing = if (location.hasBearing() && lastGpsSpeed >= BEARING_MIN_SPEED_KMH) location.bearing else null
+
+        serviceScope.launch {
+            val cacheDao = db.speedLimitCacheDao()
+
+            // 1) Donde estoy: caché (instantánea) y solo si no se conoce, la red
+            val cached = SpeedLimitCache.get(cacheDao, location.latitude, location.longitude, bearing)
+            if (cached != null) applyLimit(cached)
+            else fetchLimit(cacheDao, location, bearing, hereSlot, apply = true, LIMIT_QUERY_MIN_DISTANCE_M, LIMIT_QUERY_MIN_INTERVAL_MS)
+
+            // 2) La vía de delante: si su límite no está en la caché, se pide ya para tenerlo
+            //    cuando lleguemos. Sin prisa: la consulta de aquí tiene prioridad.
+            if (bearing != null && lastGpsSpeed >= AHEAD_MIN_SPEED_KMH && !hereSlot.inFlight) {
+                val metres = (lastGpsSpeed / 3.6 * AHEAD_SECONDS).coerceIn(AHEAD_MIN_M, AHEAD_MAX_M)
+                val ahead = pointAhead(location, bearing, metres)
+                if (SpeedLimitCache.get(cacheDao, ahead.latitude, ahead.longitude, bearing) == null) {
+                    fetchLimit(cacheDao, ahead, bearing, aheadSlot, apply = false, AHEAD_MIN_DISTANCE_M, AHEAD_MIN_INTERVAL_MS)
+                }
+            }
+        }
+    }
+
+    /** Punto a [metres] metros de [from] en la dirección [bearing]. */
+    private fun pointAhead(from: Location, bearing: Float, metres: Double): Location {
+        val d = metres / 6_371_000.0
+        val br = Math.toRadians(bearing.toDouble())
+        val lat1 = Math.toRadians(from.latitude)
+        val lon1 = Math.toRadians(from.longitude)
+        val lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(br))
+        val lon2 = lon1 + atan2(sin(br) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2))
+        return Location("ahead").apply {
+            latitude = Math.toDegrees(lat2)
+            longitude = Math.toDegrees(lon2)
+        }
+    }
+
+    /**
+     * Consulta el límite a Overpass en [at] y lo guarda en la caché: en el punto exacto y a
+     * lo largo de la vía. Con [apply] lo muestra ya; sin él (búsqueda anticipada) solo lo
+     * deja guardado. Pausa mínima entre consultas del mismo hueco y espera si el servidor falla.
+     */
+    private suspend fun fetchLimit(
+        dao: SpeedLimitCacheDao, at: Location, bearing: Float?, slot: LimitSlot,
+        apply: Boolean, minDistanceM: Float, minIntervalMs: Long
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        synchronized(limitLock) {
+            val prev = slot.loc
+            if (slot.inFlight) return
+            if (prev != null && (now - slot.timeMs < minIntervalMs || prev.distanceTo(at) < minDistanceM)) return
+            slot.inFlight = true
+            slot.loc = at
+            slot.timeMs = now
+        }
+        try {
+            when (val r = SpeedLimitProvider.fetch(at.latitude, at.longitude, bearing)) {
+                is SpeedLimitProvider.Result.Ok -> {
+                    SpeedLimitCache.put(dao, at.latitude, at.longitude, bearing, r)
+                    SpeedLimitCache.putAlong(dao, at.latitude, at.longitude, r)
+                    if (apply) applyLimit(r)
+                }
+                // Sin red o servidor ocupado: se conserva el último valor y se espera antes de insistir
+                SpeedLimitProvider.Result.Failed ->
+                    synchronized(limitLock) { slot.timeMs = SystemClock.elapsedRealtime() + LIMIT_FAIL_BACKOFF_MS }
+            }
+        } finally {
+            synchronized(limitLock) { slot.inFlight = false }
+        }
+    }
+
+    /**
+     * Android solo manda un fix cuando te has movido al menos 1 m, así que al pararte
+     * dejan de llegar y la última velocidad se quedaba en pantalla (8 km/h durante
+     * 19 s en la ruta 40). Si hace más de 2,5 s del último fix y ibas despacio, estás
+     * parado: velocidad 0. Si ibas rápido es más bien pérdida de señal (túnel): se
+     * mantiene unos segundos y después se pone a 0 para no enseñar un dato inventado.
+     */
+    private fun startStaleSpeedWatchdog() {
+        staleSpeedJob?.cancel()
+        staleSpeedJob = serviceScope.launch {
+            while (isActive) {
+                delay(500)
+                val loc = lastLocation ?: continue
+                if (lastGpsSpeed == 0f) continue
+                val ageS = (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1e9
+                val stopped = ageS > STALE_FIX_STOPPED_S && lastGpsSpeed < STALE_FIX_SLOW_KMH
+                val lost = ageS > STALE_FIX_LOST_S
+                if (stopped || lost) {
+                    lastGpsSpeed = 0f
+                    currentSpeed.postValue(0f)
+                    updateOverLimit()
+                }
+            }
+        }
+    }
+
+    /** Vía sin dato ni estimación: se sigue con el último límite conocido. */
+    private fun applyLimit(r: SpeedLimitProvider.Result.Ok) {
+        val limit = r.limitKmh ?: return
+        knownLimit = limit
+        speedLimitEstimated.postValue(r.estimated)
+        currentSpeedLimit.postValue(limit)
+        updateOverLimit()
+    }
+
+    /** Marca el exceso de velocidad y pita al rebasar el límite (y cada 15 s mientras dure). */
+    @Synchronized
+    private fun updateOverLimit() {
+        val limit = knownLimit
+        val over = limit > 0 && lastGpsSpeed > limit + OVER_LIMIT_TOLERANCE_KMH
+        if (over != overLimit) overSpeedLimit.postValue(over)
+        if (over) {
+            val now = SystemClock.elapsedRealtime()
+            if (!overLimit || now - lastOverAlertMs >= OVER_LIMIT_REPEAT_MS) {
+                lastOverAlertMs = now
+                beep()
+            }
+        }
+        overLimit = over
+    }
+
+    private fun beep() {
+        try {
+            val tone = toneGenerator
+                ?: ToneGenerator(AudioManager.STREAM_MUSIC, 100).also { toneGenerator = it }
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "No se pudo reproducir el aviso: ${e.message}")
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -377,15 +715,20 @@ class TrackingService : Service(), SensorEventListener {
                     linearAcc[0].pow(2) + linearAcc[1].pow(2) + linearAcc[2].pow(2)
                 )
 
+                updateLongitudinalAccel(event.values)
+
                 currentAccel.postValue(accelMagnitude)
-                if (accelMagnitude > (maxAccel.value ?: 0f)) {
-                    maxAccel.postValue(accelMagnitude)
-                }
             }
 
             Sensor.TYPE_ROTATION_VECTOR -> {
                 SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
-                rawLeanAngle = lateralLeanDegrees()
+                Compass.azimuth(rotMatrix)?.let { az ->
+                    val prev = compassHeading.value
+                    if (prev == null || angularDiff(prev, az) >= 2f) compassHeading.postValue(az)
+                }
+                // Lectura no fiable: se conserva el último lean válido
+                rawLeanAngle = lateralLeanDegrees() ?: return
+                autoCalibrateWhenStill(rawLeanAngle)
                 val correctedLean = rawLeanAngle - restingAngleOffset
                 currentLeanDeg = correctedLean
                 currentLean.postValue(abs(correctedLean))
@@ -393,7 +736,80 @@ class TrackingService : Service(), SensorEventListener {
                 if (abs(correctedLean) > (maxLean.value ?: 0f)) {
                     maxLean.postValue(abs(correctedLean))
                 }
+                // Convención: negativo = izquierda, positivo = derecha
+                if (correctedLean < 0 && -correctedLean > (maxLeanLeft.value ?: 0f)) {
+                    maxLeanLeft.postValue(-correctedLean)
+                } else if (correctedLean > 0 && correctedLean > (maxLeanRight.value ?: 0f)) {
+                    maxLeanRight.postValue(correctedLean)
+                }
             }
+        }
+    }
+
+    private fun setCalibrationStatus(status: CalibrationStatus) {
+        if (calibrationStatus.value != status) calibrationStatus.postValue(status)
+    }
+
+    /**
+     * ¿Vamos recto? En marcha a más de 15 km/h con una posición reciente, sin fuerza
+     * lateral y con el rumbo GPS estable durante al menos 3 s. Mientras dura, el ángulo
+     * medio es la referencia del cero (moto derecha), independiente de la parada.
+     */
+    private fun trackStraightRiding(raw: Float) {
+        val fixAgeS = lastLocation?.let {
+            (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1e9
+        } ?: Double.MAX_VALUE
+        val straight = lastGpsSpeed >= STRAIGHT_MIN_SPEED_KMH && fixAgeS < STRAIGHT_MAX_FIX_AGE_S &&
+            abs(lateralAccelMean) < STRAIGHT_MAX_LATERAL_MS2 && bearingSteady
+        if (!straight) { straightSinceMs = 0L; return }
+        val now = SystemClock.elapsedRealtime()
+        if (straightSinceMs == 0L) straightSinceMs = now
+        if (now - straightSinceMs >= STRAIGHT_MIN_TIME_MS) {
+            // Media de todo el tiempo recto de la ruta: rodando recto hay ruido de varios
+            // grados (la dirección se corrige), y así se promedia
+            straightRefSum += raw
+            straightRefN++
+            straightLeanRef = (straightRefSum / straightRefN).toFloat()
+        }
+    }
+
+    /**
+     * Fija el cero de inclinación con la moto parada y derecha, una vez por ruta y solo
+     * después de haber recorrido una distancia mínima (CALIB_MIN_DISTANCE_M) y de haber
+     * rodado recto (hay referencia). Si el ángulo parado difiere de la referencia, la
+     * moto está ladeada (pie en el suelo): no vale y se espera a otra parada.
+     * Se evalúa en cada lectura del sensor (no en cada fix GPS: parado no llegan fixes).
+     */
+    private fun autoCalibrateWhenStill(raw: Float) {
+        trackStraightRiding(raw)
+        if (calibratedThisRide) return
+        val stopped = lastGpsSpeed < CALIB_STOPPED_SPEED_KMH
+        if (totalDistance * 1000f < CALIB_MIN_DISTANCE_M || straightLeanRef.isNaN() || !stopped) {
+            stillN = 0
+            setCalibrationStatus(CalibrationStatus.WAITING)
+            return
+        }
+        setCalibrationStatus(CalibrationStatus.MEASURING)
+        val now = SystemClock.elapsedRealtime()
+        if (stillN == 0) { stillStartMs = now; stillSum = 0.0; stillSumSq = 0.0 }
+        stillN++; stillSum += raw; stillSumSq += raw.toDouble() * raw
+        if (now - stillStartMs < CALIB_WINDOW_MS) return
+
+        val mean = stillSum / stillN
+        val std = sqrt((stillSumSq / stillN - mean * mean).coerceAtLeast(0.0))
+        stillN = 0
+        if (std >= CALIB_MAX_STD_DEG || abs(mean) > CALIB_MAX_OFFSET_DEG) return
+        if (abs(mean - straightLeanRef) > CALIB_MAX_DIFF_FROM_STRAIGHT_DEG) {
+            Log.i(TAG, "Calibración descartada: parado ${fmt(mean.toFloat())}° vs recto ${fmt(straightLeanRef)}° (moto ladeada)")
+            return
+        }
+        calibratedThisRide = true
+        setCalibrationStatus(CalibrationStatus.DONE)
+        if (abs(mean - restingAngleOffset) > 0.3) {
+            Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(mean.toFloat())}°")
+            restingAngleOffset = mean.toFloat()
+            getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
+                .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
         }
     }
 
@@ -408,7 +824,7 @@ class TrackingService : Service(), SensorEventListener {
      * (El roll de getOrientation() medía otra cosa: con el móvil vertical u
      * horizontal mezclaba el cabeceo delante/atrás.)
      */
-    private fun lateralLeanDegrees(): Float {
+    private fun lateralLeanDegrees(): Float? {
         // Fila 3 de la matriz de rotación = eje "arriba" del mundo expresado
         // en coordenadas del dispositivo (x derecha, y arriba en vertical)
         val ux = rotMatrix[6]
@@ -422,12 +838,22 @@ class TrackingService : Service(), SensorEventListener {
             Surface.ROTATION_270 -> uy to -ux
             else                 -> ux to uy
         }
-        return Math.toDegrees(atan2(-sx, sy).toDouble()).toFloat()
+
+        // Móvil fuera del soporte (pantalla casi horizontal, boca abajo, en el
+        // bolsillo…): la proyección es ~0 o apunta hacia abajo y atan2 se
+        // dispara (-120°, +170° en el test del 24/09). No hay lean fiable.
+        if (sqrt(sx * sx + sy * sy) < MIN_SCREEN_VERTICALITY || sy <= 0f) return null
+
+        val lean = Math.toDegrees(atan2(-sx, sy).toDouble()).toFloat()
+        return if (abs(lean) <= MAX_PLAUSIBLE_LEAN_DEG) lean else null
     }
 
     /** GPS si el error es pequeño; si no, la posición viene de WiFi/antenas. */
     private fun sourceOf(location: Location) =
         if (location.accuracy <= MAX_ACCURACY_FOR_DISTANCE_M) "gps" else "red"
+
+    /** Diferencia entre dos rumbos en grados (0..180), cruzando el 0/360. */
+    private fun angularDiff(a: Float, b: Float) = abs(((a - b + 540f) % 360f) - 180f)
 
     private fun fmt(v: Float) = String.format(Locale.US, "%.1f", v)
 
@@ -463,6 +889,8 @@ class TrackingService : Service(), SensorEventListener {
             } else {
                 append(",,,,none")
             }
+            append(',').append(currentSpeedLimit.value ?: 0)
+            append(String.format(Locale.US, ",%.2f", smoothedAccel))
         }
     }
 
@@ -485,19 +913,22 @@ class TrackingService : Service(), SensorEventListener {
                 timestamp     = System.currentTimeMillis(),
                 latitude      = location.latitude,
                 longitude     = location.longitude,
-                altitude      = location.altitude,
+                altitude      = msl.of(location),
                 accuracy      = location.accuracy,
                 speedKmh      = lastGpsSpeed,
                 accelX        = linearAcc[0],
                 accelY        = linearAcc[1],
                 accelZ        = linearAcc[2],
                 accelTotal    = accelMagnitude,
+                longAccel     = smoothedAccel,
                 leanAngle     = currentLeanDeg,
                 bearing       = location.bearing,
                 hdop          = if (location.hasAccuracy()) location.accuracy else -1f,
                 vdop          = if (location.hasVerticalAccuracy()) location.verticalAccuracyMeters else -1f,
                 satellites    = location.extras?.getInt("satellites") ?: 0,
-                altitudeEllipsoid = if (location.hasMslAltitude()) location.mslAltitudeMeters else location.altitude
+                altitudeEllipsoid = location.altitude,
+                speedLimitKmh = currentSpeedLimit.value ?: 0,
+                speedLimitEstimated = speedLimitEstimated.value ?: false
             )
             db.routeDao().insertPoint(point)
             pointsRecorded++
@@ -562,4 +993,12 @@ class TrackingService : Service(), SensorEventListener {
         val speed = String.format("%.0f km/h | %.1f km", lastGpsSpeed, totalDistance)
         nm.notify(NOTIFICATION_ID, buildNotification(speed))
     }
+}
+
+/** Estado de la calibración inicial del ángulo de inclinación, para avisar al usuario. */
+enum class CalibrationStatus {
+    OFF,        // sin ruta en curso
+    WAITING,    // a la espera de la distancia mínima y de una parada
+    MEASURING,  // parado y midiendo el cero de inclinación: mantener la moto derecha
+    DONE        // calibrado
 }

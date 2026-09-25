@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background">
+    android:background="@color/background"
+    android:orientation="vertical">
+
+<ScrollView
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -37,12 +43,14 @@
         </LinearLayout>
 
         <!-- VELOCIDAD principal -->
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
             app:cardBackgroundColor="@color/surface"
             app:cardCornerRadius="16dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="1dp"
             app:cardElevation="4dp">
 
             <LinearLayout
@@ -50,7 +58,10 @@
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:orientation="vertical"
-                android:padding="24dp">
+                android:paddingStart="24dp"
+                android:paddingTop="24dp"
+                android:paddingEnd="100dp"
+                android:paddingBottom="24dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -60,133 +71,242 @@
                     android:textSize="12sp"
                     android:letterSpacing="0.1" />
 
+                <!-- Dirección de la marcha bajo la etiqueta: punto cardinal y grados -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tv_heading"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tv_heading_deg"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:paddingBottom="3dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_place"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/accent_cyan"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
                 <com.mototrack.ui.SpeedDigitsView
                     android:id="@+id/tv_speed"
                     android:layout_width="match_parent"
                     android:layout_height="120dp"
                     android:text="0"
-                    android:textColor="@color/accent_cyan"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold"
                     android:fontFamily="sans-serif-condensed" />
 
                 <TextView
+                    android:id="@+id/tv_speed_unit"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="km/h"
                     android:textColor="@color/text_secondary"
                     android:textSize="18sp" />
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+
+        <com.mototrack.ui.SpeedLimitSignView
+            android:id="@+id/speed_limit_sign"
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="10dp" />
+
+        <!-- Velocidad máxima de la ruta, abajo a la izquierda: número grande y en negrita -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="16dp"
+            android:gravity="bottom"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.1"
+                android:paddingBottom="4dp"
+                android:text="MÁX"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tv_max_speed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="0"
+                android:textColor="@color/text_primary"
+                android:textSize="30sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:paddingBottom="4dp"
+                android:text="km/h"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- LEAN ANGLE -->
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
             app:cardBackgroundColor="@color/surface"
             app:cardCornerRadius="16dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="1dp"
             app:cardElevation="4dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_horizontal"
                 android:orientation="vertical"
-                android:padding="20dp">
+                android:paddingStart="16dp"
+                android:paddingTop="10dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="6dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <!-- Etiqueta y máximo en una fila -->
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="ÁNGULO DE INCLINACIÓN"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:letterSpacing="0.1" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/tv_lean"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.0°"
-                    android:textColor="@color/accent_orange"
-                    android:textSize="40sp"
-                    android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tv_lean_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:text="INCLINACIÓN"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <Space
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/tv_max_lean_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:text="MÁX "
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tv_max_lean"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="I 0° · D 0°"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
 
                 <!-- Vúmetro: izquierda ← 0 → derecha -->
                 <com.mototrack.ui.LeanMeterView
                     android:id="@+id/lean_meter"
                     android:layout_width="match_parent"
-                    android:layout_height="64dp"
-                    android:layout_marginTop="8dp"
-                    android:layout_marginBottom="4dp" />
-
-                <TextView
-                    android:id="@+id/tv_max_lean"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Máx: 0.0°"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:layout_height="48dp"
+                    android:layout_marginTop="2dp" />
             </LinearLayout>
-        </androidx.cardview.widget.CardView>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- ACELERACIÓN y DISTANCIA -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="12dp"
+            android:orientation="horizontal">
 
             <!-- Aceleración -->
-            <androidx.cardview.widget.CardView
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="6dp"
                 app:cardBackgroundColor="@color/surface"
                 app:cardCornerRadius="16dp"
+                app:strokeColor="@color/card_stroke"
+                app:strokeWidth="1dp"
                 app:cardElevation="4dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center"
-                    android:orientation="vertical"
+                    android:orientation="horizontal"
                     android:padding="16dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="ACELERACIÓN"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                    <!-- Vúmetro vertical: arriba acelera, abajo frena -->
+                    <com.mototrack.ui.AccelMeterView
+                        android:id="@+id/accel_meter"
+                        android:layout_width="32dp"
+                        android:layout_height="120dp" />
 
-                    <TextView
-                        android:id="@+id/tv_accel"
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="0.00 m/s²"
-                        android:textColor="@color/accent_green"
-                        android:textSize="22sp"
-                        android:textStyle="bold" />
+                        android:layout_weight="1"
+                        android:layout_marginStart="12dp"
+                        android:gravity="center"
+                        android:orientation="vertical">
 
-                    <TextView
-                        android:id="@+id/tv_max_accel"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Máx: 0.00"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="ACELERACIÓN"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+
+                        <TextView
+                            android:id="@+id/tv_accel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0.0"
+                            android:textColor="@color/text_primary"
+                            android:textSize="22sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
                 </LinearLayout>
-            </androidx.cardview.widget.CardView>
+            </com.google.android.material.card.MaterialCardView>
 
-            <!-- Distancia -->
-            <androidx.cardview.widget.CardView
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:layout_marginStart="6dp"
                 app:cardBackgroundColor="@color/surface"
                 app:cardCornerRadius="16dp"
+                app:strokeColor="@color/card_stroke"
+                app:strokeWidth="1dp"
                 app:cardElevation="4dp">
 
                 <LinearLayout
@@ -194,7 +314,10 @@
                     android:layout_height="wrap_content"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:paddingStart="14dp"
+                    android:paddingTop="14dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="12dp">
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -212,16 +335,74 @@
                         android:textSize="22sp"
                         android:textStyle="bold" />
 
+                    <!-- Último LED = la ruta más larga que has hecho -->
+                    <com.mototrack.ui.DistanceMeterView
+                        android:id="@+id/distance_meter"
+                        android:layout_width="match_parent"
+                        android:layout_height="32dp"
+                        android:layout_marginTop="6dp" />
+
                     <TextView
-                        android:id="@+id/tv_max_speed"
+                        android:id="@+id/tv_avg_speed"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Vmáx: 0 km/h"
+                        android:text="Vmed: 0 km/h"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp" />
                 </LinearLayout>
-            </androidx.cardview.widget.CardView>
+            </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
+
+        <!-- ALTURA sobre el nivel del mar; vúmetro vertical: último LED = altura máxima de la ruta -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@color/surface"
+            app:cardCornerRadius="16dp"
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="1dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <com.mototrack.ui.AltitudeMeterView
+                    android:id="@+id/altitude_meter"
+                    android:layout_width="32dp"
+                    android:layout_height="110dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:text="ALTURA"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tv_altitude"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="— m"
+                        android:textColor="@color/accent_orange"
+                        android:textSize="28sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Puntos grabados -->
         <TextView
@@ -234,17 +415,21 @@
             android:textSize="12sp"
             android:layout_marginBottom="16dp" />
 
-        <!-- Botón INICIO/STOP -->
-        <Button
-            android:id="@+id/btn_record"
-            android:layout_width="match_parent"
-            android:layout_height="64dp"
-            android:text="▶ INICIAR RUTA"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:textColor="@android:color/white"
-            android:backgroundTint="@color/start_green"
-            android:layout_marginTop="8dp" />
-
     </LinearLayout>
 </ScrollView>
+
+    <!-- Botón INICIO/STOP: fijo abajo, siempre a mano sin tener que hacer scroll -->
+    <Button
+        android:id="@+id/btn_record"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:backgroundTint="@color/start_green"
+        android:text="▶ INICIAR RUTA"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+</LinearLayout>

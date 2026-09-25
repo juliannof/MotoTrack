@@ -33,7 +33,7 @@ class RouteAdapter(
             binding.tvDate.text = sdf.format(Date(route.startTime))
             binding.tvDistance.text = String.format("%.2f km", route.distanceKm)
             binding.tvMaxSpeed.text = String.format("Vmax: %.0f km/h", route.maxSpeedKmh)
-            binding.tvMaxLean.text  = String.format("Max lean: %.1f°", route.maxLeanAngle)
+            binding.tvMaxLean.text  = String.format("Lean I %.0f° · D %.0f°", route.maxLeanLeft, route.maxLeanRight)
 
             // Duración
             if (route.endTime > 0) {

@@ -3,6 +3,7 @@ package com.mototrack.ui
 import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.*
+import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
 import com.mototrack.service.SensorLogger
 import com.mototrack.service.TrackingService
@@ -13,18 +14,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = RouteRepository(application)
 
-    val allRoutes: LiveData<List<Route>> = repo.allRoutes
+    private val auth = AuthRepository(application)
+
+    // Cuenta con la sesión iniciada; el historial solo muestra sus rutas
+    private val owner = MutableLiveData(auth.currentUser() ?: "")
+    val allRoutes: LiveData<List<Route>> = owner.switchMap { repo.routesFor(it) }
+
+    /** Llamar al iniciar o cerrar sesión. */
+    fun onSessionChanged() {
+        val email = auth.currentUser() ?: ""
+        if (email.isNotEmpty()) viewModelScope.launch { repo.claimUnownedRoutes(email) }
+        owner.value = email
+    }
 
     // Relay desde el servicio
     val isRecording   = TrackingService.isRecording
     val currentSpeed  = TrackingService.currentSpeed
+    val currentSpeedLimit = TrackingService.currentSpeedLimit
+    val avgSpeed      = TrackingService.avgSpeed
+    val longitudinalAccel = TrackingService.longitudinalAccel
+    val speedLimitEstimated = TrackingService.speedLimitEstimated
+    val overSpeedLimit = TrackingService.overSpeedLimit
+    val calibrationStatus = TrackingService.calibrationStatus
     val currentLean   = TrackingService.currentLean
     val currentLeanSigned = TrackingService.currentLeanSigned
     val currentAccel  = TrackingService.currentAccel
     val currentBearing = TrackingService.currentBearing
+    val compassHeading = TrackingService.compassHeading
+    val currentPlace = TrackingService.currentPlace
+    val currentAltitude = TrackingService.currentAltitude
+    val maxAltitude = TrackingService.maxAltitude
+    val minAltitude = TrackingService.minAltitude
     val pointCount    = TrackingService.pointCount
     val maxSpeed      = TrackingService.maxSpeed
     val maxLean       = TrackingService.maxLean
+    val maxLeanLeft   = TrackingService.maxLeanLeft
+    val maxLeanRight  = TrackingService.maxLeanRight
     val maxAccel      = TrackingService.maxAccel
     val distanceKm    = TrackingService.distanceKm
 

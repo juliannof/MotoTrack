@@ -5,7 +5,8 @@ import android.content.Context
 class RouteRepository(context: Context) {
     private val dao = MotoTrackDatabase.getDatabase(context).routeDao()
 
-    val allRoutes = dao.getAllRoutes()
+    fun routesFor(owner: String) = dao.getRoutesFor(owner)
+    suspend fun claimUnownedRoutes(owner: String) = dao.claimUnownedRoutes(owner)
 
     suspend fun insertRoute(route: Route) = dao.insertRoute(route)
     suspend fun updateRoute(route: Route) = dao.updateRoute(route)
