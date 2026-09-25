@@ -143,7 +143,7 @@ class DashboardFragment : Fragment() {
         viewModel.maxLeanRight.observe(viewLifecycleOwner) { showMaxLean() }
 
         viewModel.avgSpeed.observe(viewLifecycleOwner) { avg ->
-            binding.tvAvgSpeed.text = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) String.format("%.0f km/h", avg)
+            binding.tvAvgSpeed.text = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) String.format("%.0f", avg)
                                       else String.format("Vmed: %.0f km/h", avg)
         }
 

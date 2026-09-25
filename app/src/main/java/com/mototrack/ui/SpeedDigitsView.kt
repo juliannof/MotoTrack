@@ -43,6 +43,7 @@ class SpeedDigitsView @JvmOverloads constructor(
         drawPaint.textSize = REFERENCE_SIZE
         drawPaint.getTextBounds("0", 0, 1, digitBounds)
         val gap = REFERENCE_SIZE * DIGIT_GAP
+        // Un solo tamaño siempre, calculado para 3 cifras: no cambia al pasar de 9 a 10 ni de 99 a 100
         val scale = min(availH / digitBounds.height(), availW / inkWidth(WIDEST, gap))
         drawPaint.textSize = REFERENCE_SIZE * scale
 

@@ -39,10 +39,10 @@
                     android:id="@+id/tv_speed"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:paddingStart="100dp"
+                    android:paddingStart="12dp"
                     android:paddingEnd="12dp"
-                    android:paddingTop="60dp"
-                    android:paddingBottom="34dp"
+                    android:paddingTop="66dp"
+                    android:paddingBottom="32dp"
                     android:text="0"
                     android:textColor="@color/text_primary"
                     android:textStyle="bold"
@@ -60,8 +60,8 @@
 
         <com.mototrack.ui.SpeedLimitSignView
             android:id="@+id/speed_limit_sign"
-            android:layout_width="84dp"
-            android:layout_height="84dp"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
             android:layout_gravity="top|start"
             android:layout_margin="8dp" />
 
@@ -71,37 +71,47 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom|center_horizontal"
-                    android:layout_marginStart="46dp"
                     android:layout_marginBottom="8dp"
                     android:text="km/h"
                     android:textColor="@color/text_secondary"
                     android:textSize="16sp" />
 
-                <!-- Media, abajo a la derecha -->
+                <!-- Velocidad media, abajo a la derecha: mismo estilo que la máxima -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom|end"
                     android:layout_margin="10dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:paddingBottom="4dp"
                         android:text="MED"
                         android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1" />
+                        android:textSize="11sp" />
 
                     <TextView
                         android:id="@+id/tv_avg_speed"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:text="0 km/h"
+                        android:layout_marginStart="6dp"
+                        android:text="0"
+                        android:textColor="@color/text_primary"
+                        android:textSize="30sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="3dp"
+                        android:paddingBottom="4dp"
+                        android:text="km/h"
                         android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
+                        android:textSize="12sp" />
                 </LinearLayout>
 
                 <!-- Dirección de la marcha: punto cardinal (N, NE, E, SE, S, SO, O, NO) y grados -->
