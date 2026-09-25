@@ -34,7 +34,9 @@ object RouteNamer {
 
     private val KNOWN_PLACES = listOf(
         // Ojén: el aparcamiento está enfrente, a unos 26 m
-        KnownPlace("Colegio Alemán de Málaga", 36.52976, -4.75388, 150f)
+        KnownPlace("Colegio Alemán de Málaga", 36.52976, -4.75388, 150f),
+        // Casa: el Geocoder da el barrio ("Las Lagunas de Mijas"); en OSM es la urbanización
+        KnownPlace("Urbanización El Coto", 36.55627, -4.63346, 300f)
     )
 
     private fun knownPlaceAt(lat: Double, lon: Double): String? {
