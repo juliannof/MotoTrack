@@ -14,6 +14,7 @@
     <color name="accent_green">#8BC34A</color>
 
     <!-- Exceso de velocidad y borde de las tarjetas -->
+    <color name="below_sea_blue">#29B6F6</color>
     <color name="over_limit_red">#FF3B30</color>
     <color name="card_stroke">#33FFFFFF</color>
 

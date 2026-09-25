@@ -34,7 +34,14 @@ class AltitudeMeterView @JvmOverloads constructor(
     private val rect = RectF()
 
     private val colorOff = Color.parseColor("#2A2D2F")
-    private val colorOn = Color.parseColor("#FF5722")
+    private var colorOn = Color.parseColor("#FF5722")
+
+    /** Color de los LEDs encendidos (naranja normal, azul bajo el nivel del mar). */
+    fun setColor(color: Int) {
+        if (color == colorOn) return
+        colorOn = color
+        invalidate()
+    }
 
     fun setFraction(value: Float) {
         val v = value.coerceIn(0f, 1f)

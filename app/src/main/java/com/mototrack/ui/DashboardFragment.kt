@@ -80,6 +80,11 @@ class DashboardFragment : Fragment() {
         // Altura sobre el nivel del mar
         viewModel.currentAltitude.observe(viewLifecycleOwner) { alt ->
             binding.tvAltitude.text = String.format("%.0f m", alt)
+            // Azul por debajo del nivel del mar; naranja en el resto
+            val color = ContextCompat.getColor(
+                requireContext(), if (alt < 0) R.color.below_sea_blue else R.color.accent_orange)
+            binding.tvAltitude.setTextColor(color)
+            binding.altitudeMeter.setColor(color)
             updateAltitudeMeter()
         }
         viewModel.maxAltitude.observe(viewLifecycleOwner) { updateAltitudeMeter() }
