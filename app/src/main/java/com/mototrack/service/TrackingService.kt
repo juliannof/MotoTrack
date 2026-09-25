@@ -60,6 +60,15 @@ class TrackingService : Service(), SensorEventListener {
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
+        // Autocalibración: solo parado (el último fix va a <3 km/h), ventana de 3 s
+        // y desviación <0,5°. Rodando despacio o en una curva lenta el lean no es
+        // cero y se "calibraría" la inclinación real (visto en la ruta 40: offset -28,8°).
+        private const val CALIB_MAX_SPEED_KMH = 3f
+        private const val CALIB_WINDOW_MS = 3_000L
+        private const val CALIB_MAX_STD_DEG = 0.5
+        // Una inclinación del soporte mayor que esto no es del soporte: se ignora
+        private const val CALIB_MAX_OFFSET_DEG = 15f
+
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
@@ -134,7 +143,11 @@ class TrackingService : Service(), SensorEventListener {
     private var lastGpsBearing = 0f
     private var restingAngleOffset = 0f
     private var rawLeanAngle = 0f
-    private val calibrationBuffer = mutableListOf<Float>()
+    // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
+    private var stillStartMs = 0L
+    private var stillN = 0
+    private var stillSum = 0.0
+    private var stillSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
 
@@ -359,28 +372,6 @@ class TrackingService : Service(), SensorEventListener {
         updateSpeedLimit(location)
 
 
-        // Auto-calibración a baja velocidad
-        if (lastGpsSpeed < 20f) {
-            calibrationBuffer.add(rawLeanAngle)
-            if (calibrationBuffer.size > 30) calibrationBuffer.removeAt(0)
-            if (calibrationBuffer.size >= 10) {
-                val avg = calibrationBuffer.average().toFloat()
-                val stdDev = calibrationBuffer.map { (it - avg) * (it - avg) }
-                    .average().let { Math.sqrt(it).toFloat() }
-                if (stdDev < 2.0f) {
-                    if (abs(avg - restingAngleOffset) > 0.5f) {
-                        Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(avg)}°")
-                    }
-                    restingAngleOffset = avg
-                    getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
-                        .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
-                }
-            }
-        } else {
-            calibrationBuffer.clear()
-        }
-
-
         // Actualizar notificación
         updateNotification()
     }
@@ -498,6 +489,7 @@ class TrackingService : Service(), SensorEventListener {
                 SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
                 // Lectura no fiable: se conserva el último lean válido
                 rawLeanAngle = lateralLeanDegrees() ?: return
+                autoCalibrateWhenStill(rawLeanAngle)
                 val correctedLean = rawLeanAngle - restingAngleOffset
                 currentLeanDeg = correctedLean
                 currentLean.postValue(abs(correctedLean))
@@ -512,6 +504,29 @@ class TrackingService : Service(), SensorEventListener {
                     maxLeanRight.postValue(correctedLean)
                 }
             }
+        }
+    }
+
+    /**
+     * Fija el cero de inclinación con la moto parada y el ángulo estable.
+     * Se evalúa en cada lectura del sensor (no en cada fix GPS: parado no llegan fixes).
+     */
+    private fun autoCalibrateWhenStill(raw: Float) {
+        if (lastGpsSpeed >= CALIB_MAX_SPEED_KMH) { stillN = 0; return }
+        val now = SystemClock.elapsedRealtime()
+        if (stillN == 0) { stillStartMs = now; stillSum = 0.0; stillSumSq = 0.0 }
+        stillN++; stillSum += raw; stillSumSq += raw.toDouble() * raw
+        if (now - stillStartMs < CALIB_WINDOW_MS) return
+
+        val mean = stillSum / stillN
+        val std = sqrt((stillSumSq / stillN - mean * mean).coerceAtLeast(0.0))
+        stillN = 0
+        if (std >= CALIB_MAX_STD_DEG || abs(mean) > CALIB_MAX_OFFSET_DEG) return
+        if (abs(mean - restingAngleOffset) > 0.3) {
+            Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(mean.toFloat())}°")
+            restingAngleOffset = mean.toFloat()
+            getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
+                .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
         }
     }
 
