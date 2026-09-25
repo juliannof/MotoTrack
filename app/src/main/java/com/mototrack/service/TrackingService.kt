@@ -65,8 +65,8 @@ class TrackingService : Service(), SensorEventListener {
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
-        // Autocalibración del cero de inclinación. Solo en el primer minuto de la
-        // ruta y solo rodando entre 5 y 20 km/h en línea recta: parado no se calibra (el
+        // Autocalibración del cero de inclinación. Solo en el primer minuto desde que
+        // hay velocidad medida y solo rodando entre 5 y 20 km/h en línea recta: parado no se calibra (el
         // móvil puede estar en la mano o sin montar) y en una curva lenta el lean no es
         // cero (visto en la ruta 40: offset -28,8°). Ventana de 3 s con el ángulo estable.
         private const val CALIB_PHASE_MS = 60_000L
@@ -271,7 +271,7 @@ class TrackingService : Service(), SensorEventListener {
         minAltitude.postValue(Double.NaN)
         calibratedThisRide = false
         calibPhaseOver = false
-        calibStartMs = SystemClock.elapsedRealtime()
+        calibStartMs = 0L   // empieza a contar con la primera velocidad medida
         stillN = 0
         calibrationStatus.postValue(CalibrationStatus.WAITING)
         avgSpeed.postValue(0f)
@@ -421,6 +421,11 @@ class TrackingService : Service(), SensorEventListener {
         }
 
         lastGpsSpeed   = location.speed * 3.6f   // m/s → km/h
+        // Primero se mide la velocidad y después se calibra: el minuto de la fase
+        // inicial empieza con la primera velocidad GPS válida, no al pulsar INICIAR
+        if (calibStartMs == 0L && location.hasSpeed() && sourceOf(location) == "gps") {
+            calibStartMs = SystemClock.elapsedRealtime()
+        }
         lastGpsBearing = location.bearing
         lastGpsAlt     = msl.of(location)
         lastLocation   = location
@@ -666,12 +671,14 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
-     * ¿Sigue abierta la fase de calibración? Se cierra a los 1 minuto de empezar la
-     * ruta; si se cierra sin haber calibrado se avisa y se sigue con el offset
-     * guardado de la vez anterior.
+     * ¿Sigue abierta la fase de calibración? Empieza a contar con la primera velocidad
+     * medida y se cierra 1 minuto después; si se cierra sin haber calibrado se avisa y
+     * se sigue con el offset guardado de la vez anterior.
      */
     private fun calibrationOpen(): Boolean {
         if (calibratedThisRide || calibPhaseOver) return false
+        // Aún sin velocidad medida: el reloj no ha empezado
+        if (calibStartMs == 0L) return true
         if (SystemClock.elapsedRealtime() - calibStartMs > CALIB_PHASE_MS) {
             calibPhaseOver = true
             stillN = 0
