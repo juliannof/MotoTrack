@@ -180,8 +180,8 @@ class DashboardFragment : Fragment() {
     private fun showCalibration(status: CalibrationStatus) {
         val label = binding.tvLeanLabel
         val (text, colorRes) = when (status) {
-            CalibrationStatus.WAITING -> "CALIBRAR: PARA Y MANILLAR IZQ." to R.color.accent_orange
-            CalibrationStatus.MEASURING -> "CALIBRANDO… NO TE MUEVAS" to R.color.accent_orange
+            CalibrationStatus.WAITING -> "CALIBRAR: RECTO A 5-20 KM/H" to R.color.accent_orange
+            CalibrationStatus.MEASURING -> "CALIBRANDO… SIGUE RECTO" to R.color.accent_orange
             CalibrationStatus.DONE -> "CALIBRADO ✓" to R.color.accent_green
             CalibrationStatus.EXPIRED -> "SIN CALIBRAR (OFFSET ANTERIOR)" to R.color.text_secondary
             CalibrationStatus.OFF -> "INCLINACIÓN" to R.color.text_secondary
