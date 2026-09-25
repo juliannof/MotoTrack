@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.*
 import android.location.*
-import android.location.OnNmeaMessageListener
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.*
@@ -20,6 +19,7 @@ import androidx.lifecycle.MutableLiveData
 import com.mototrack.R
 import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
+import com.mototrack.utils.MslAltitude
 import com.mototrack.utils.SpeedLimitCache
 import com.mototrack.ui.MainActivity
 import com.mototrack.utils.GpxExporter
@@ -171,16 +171,7 @@ class TrackingService : Service(), SensorEventListener {
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
 
-    // Location.altitude es la altura sobre el elipsoide GPS, no sobre el nivel del mar
-    // (en Málaga son ~50 m de diferencia). El GPS informa de la ondulación del geoide
-    // en las sentencias NMEA GGA; restándola sale la altura sobre el nivel del mar.
-    @Volatile private var geoidSeparationM: Double? = null
-    private val nmeaListener = OnNmeaMessageListener { message, _ ->
-        // $GPGGA,hora,lat,N,lon,E,calidad,sats,hdop,altMSL,M,ondulación,M,...
-        if (message.length > 6 && message.startsWith("$", 0) && message.substring(3, 6) == "GGA") {
-            message.split(',').getOrNull(11)?.toDoubleOrNull()?.let { geoidSeparationM = it }
-        }
-    }
+    private val msl = MslAltitude()
 
     // ── Estado de ruta ────────────────────────────────────────────────────────
     private var activeRouteId: Long? = null
@@ -356,7 +347,7 @@ class TrackingService : Service(), SensorEventListener {
                 .build()
             fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
             (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
-                .addNmeaListener(nmeaListener, Handler(Looper.getMainLooper()))
+                .addNmeaListener(msl.nmeaListener, Handler(Looper.getMainLooper()))
         } catch (e: SecurityException) {
             Log.e(TAG, "GPS permission denied: ${e.message}")
         }
@@ -364,13 +355,7 @@ class TrackingService : Service(), SensorEventListener {
 
     private fun unregisterGps() {
         fusedClient.removeLocationUpdates(locationCallback)
-        (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeNmeaListener(nmeaListener)
-    }
-
-    /** Altura sobre el nivel del mar; si no hay dato del geoide, la del elipsoide. */
-    private fun mslAltitude(location: Location): Double = when {
-        location.hasMslAltitude() -> location.mslAltitudeMeters
-        else -> geoidSeparationM?.let { location.altitude - it } ?: location.altitude
+        (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeNmeaListener(msl.nmeaListener)
     }
 
     private fun onLocationChanged(location: Location) {
@@ -397,7 +382,7 @@ class TrackingService : Service(), SensorEventListener {
 
         lastGpsSpeed   = location.speed * 3.6f   // m/s → km/h
         lastGpsBearing = location.bearing
-        lastGpsAlt     = mslAltitude(location)
+        lastGpsAlt     = msl.of(location)
         lastLocation   = location
 
         speedSumKmh += lastGpsSpeed
@@ -720,7 +705,7 @@ class TrackingService : Service(), SensorEventListener {
                 timestamp     = System.currentTimeMillis(),
                 latitude      = location.latitude,
                 longitude     = location.longitude,
-                altitude      = mslAltitude(location),
+                altitude      = msl.of(location),
                 accuracy      = location.accuracy,
                 speedKmh      = lastGpsSpeed,
                 accelX        = linearAcc[0],

@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.mototrack.R
 import com.mototrack.databinding.FragmentDashboardBinding
+import com.mototrack.utils.AltitudeMonitor
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
@@ -19,6 +20,7 @@ class DashboardFragment : Fragment() {
     private var _binding: FragmentDashboardBinding? = null
     private val binding get() = _binding!!
     private lateinit var viewModel: MainViewModel
+    private var altitudeMonitor: AltitudeMonitor? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentDashboardBinding.inflate(inflater, container, false)
@@ -164,6 +166,21 @@ class DashboardFragment : Fragment() {
         binding.tvDistance.text = "0.00 km"
         binding.tvAltitude.text = "Alt: — m"
         binding.leanMeter.reset()
+    }
+
+    // La altura se mantiene al día con el Dashboard a la vista y sin grabar;
+    // grabando la da el servicio, y fuera del Dashboard no se gasta GPS.
+    override fun onStart() {
+        super.onStart()
+        val monitor = altitudeMonitor ?: AltitudeMonitor(requireContext()).also { altitudeMonitor = it }
+        viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
+            if (recording) monitor.stop() else monitor.start()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        altitudeMonitor?.stop()
     }
 
     override fun onDestroyView() {
