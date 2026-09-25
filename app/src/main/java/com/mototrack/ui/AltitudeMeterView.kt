@@ -12,8 +12,8 @@ import kotlin.math.min
 
 /**
  * Vúmetro de altura: una fila de LEDs iguales a los de la inclinación. El último LED
- * es la altura máxima alcanzada en la ruta y la altura actual enciende los LEDs
- * hasta su proporción. Con la moto parada se encienden todos.
+ * es la altura máxima alcanzada en la ruta, el primero la mínima, y la altura
+ * actual enciende los LEDs hasta su proporción. Con la moto parada se encienden todos.
  *
  * Igual que LeanMeterView, dibujamos a mano en un Canvas.
  */
@@ -64,8 +64,8 @@ class AltitudeMeterView @JvmOverloads constructor(
         val top = paddingTop + (h - ledH) / 2f
         val radius = ledW * 0.4f
 
-        // Se enciende al pasar la mitad de su tramo
-        val litCount = (fraction * leds + 0.5f).toInt().coerceIn(0, leds)
+        // El primer LED es la altura mínima (siempre encendido) y el último la máxima
+        val litCount = (1 + fraction * (leds - 1) + 0.5f).toInt().coerceIn(1, leds)
 
         for (i in 0 until leds) {
             val left = paddingLeft + i * (ledW + gap)

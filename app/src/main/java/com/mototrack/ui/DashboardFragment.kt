@@ -138,15 +138,18 @@ class DashboardFragment : Fragment() {
     }
 
     /**
-     * Último LED = altura máxima de la ruta. Sin ruta en curso o con la moto
-     * parada se encienden todos.
+     * Escala de la altura mínima a la máxima de la ruta (valen negativas): el último
+     * LED es la máxima y el primero la mínima. Sin ruta en curso, con la moto parada
+     * o sin desnivel que mostrar, se encienden todos.
      */
     private fun updateAltitudeMeter() {
         val alt = viewModel.currentAltitude.value ?: return
-        val max = viewModel.maxAltitude.value ?: 0.0
+        val hi = viewModel.maxAltitude.value ?: Double.NaN
+        val lo = viewModel.minAltitude.value ?: Double.NaN
         val recording = viewModel.isRecording.value == true
         val stopped = (viewModel.currentSpeed.value ?: 0f) < 1f
-        val fraction = if (!recording || stopped || max <= 0.0) 1f else (alt / max).toFloat()
+        val flat = hi.isNaN() || lo.isNaN() || hi - lo < MIN_ALTITUDE_RANGE_M
+        val fraction = if (!recording || stopped || flat) 1f else ((alt - lo) / (hi - lo)).toFloat()
         binding.altitudeMeter.setFraction(fraction)
     }
 
@@ -235,5 +238,10 @@ class DashboardFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private companion object {
+        // Por debajo de este desnivel la escala no dice nada: se enciende todo
+        const val MIN_ALTITUDE_RANGE_M = 2.0
     }
 }
