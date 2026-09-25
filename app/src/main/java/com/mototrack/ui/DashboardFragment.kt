@@ -56,6 +56,7 @@ class DashboardFragment : Fragment() {
         // Velocidad
         viewModel.currentSpeed.observe(viewLifecycleOwner) { speed ->
             updateAltitudeMeter()
+            updateDistanceMeter()
             binding.tvSpeed.text = String.format("%.0f", speed)
             updateSpeedLimitSign()
         }
@@ -88,6 +89,8 @@ class DashboardFragment : Fragment() {
             updateAltitudeMeter()
         }
         viewModel.maxAltitude.observe(viewLifecycleOwner) { updateAltitudeMeter() }
+        // La ruta más larga que has hecho es la referencia del vúmetro de distancia
+        viewModel.allRoutes.observe(viewLifecycleOwner) { updateDistanceMeter() }
 
         // Calibración del ángulo: se avisa en la propia tarjeta de inclinación
         viewModel.calibrationStatus.observe(viewLifecycleOwner) { showCalibration(it) }
@@ -95,6 +98,7 @@ class DashboardFragment : Fragment() {
         // Distancia
         viewModel.distanceKm.observe(viewLifecycleOwner) { km ->
             binding.tvDistance.text = String.format("%.2f km", km)
+            updateDistanceMeter()
         }
 
         // Conteo de puntos
@@ -125,6 +129,7 @@ class DashboardFragment : Fragment() {
         // Estado de grabación → actualizar UI
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
             updateAltitudeMeter()
+            updateDistanceMeter()
             if (recording) {
                 binding.btnRecord.text = "⏹ DETENER"
                 binding.btnRecord.setBackgroundColor(
@@ -140,6 +145,20 @@ class DashboardFragment : Fragment() {
                 resetUI()
             }
         }
+    }
+
+    /**
+     * Último LED = la ruta terminada más larga. Sin ruta en curso, con la moto
+     * parada o sin ninguna ruta de referencia, se encienden todos.
+     */
+    private fun updateDistanceMeter() {
+        val km = viewModel.distanceKm.value ?: 0f
+        val longest = viewModel.allRoutes.value.orEmpty()
+            .filter { it.isCompleted }.maxOfOrNull { it.distanceKm } ?: 0f
+        val recording = viewModel.isRecording.value == true
+        val stopped = (viewModel.currentSpeed.value ?: 0f) < 1f
+        val fraction = if (!recording || stopped || longest <= 0f) 1f else km / longest
+        binding.distanceMeter.setFraction(fraction)
     }
 
     /**
