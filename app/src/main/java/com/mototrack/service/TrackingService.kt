@@ -73,6 +73,8 @@ class TrackingService : Service(), SensorEventListener {
         private const val CALIB_MIN_SPEED_KMH = 5f
         private const val CALIB_MAX_SPEED_KMH = 20f
         private const val CALIB_MAX_LATERAL_MS2 = 0.5f
+        // Un fix llega cada ~1 s rodando: más viejo que esto es que estás parado o sin señal
+        private const val CALIB_MAX_FIX_AGE_S = 1.6
         private const val CALIB_WINDOW_MS = 3_000L
         // Rodando, la dirección se corrige algo: más margen que parado
         private const val CALIB_MAX_STD_DEG = 1.0
@@ -696,7 +698,13 @@ class TrackingService : Service(), SensorEventListener {
      */
     private fun autoCalibrateWhenStill(raw: Float) {
         if (!calibrationOpen()) return
-        val rolling = lastGpsSpeed >= CALIB_MIN_SPEED_KMH && lastGpsSpeed < CALIB_MAX_SPEED_KMH
+        // Rodando de verdad: velocidad entre 5 y 20 km/h Y medida hace poco. Al pararte no
+        // llegan fixes y la última velocidad sigue "vigente" unos segundos: no vale.
+        val fixAgeS = lastLocation?.let {
+            (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1e9
+        } ?: Double.MAX_VALUE
+        val rolling = lastGpsSpeed >= CALIB_MIN_SPEED_KMH && lastGpsSpeed < CALIB_MAX_SPEED_KMH &&
+            fixAgeS < CALIB_MAX_FIX_AGE_S
         if (!rolling || lateralAccelAbs > CALIB_MAX_LATERAL_MS2) {
             stillN = 0
             setCalibrationStatus(CalibrationStatus.WAITING)
