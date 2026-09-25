@@ -65,11 +65,11 @@ class TrackingService : Service(), SensorEventListener {
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
-        // Autocalibración del cero de inclinación. Solo en los primeros 2 minutos de la
+        // Autocalibración del cero de inclinación. Solo en el primer minuto de la
         // ruta y solo rodando entre 5 y 20 km/h en línea recta: parado no se calibra (el
         // móvil puede estar en la mano o sin montar) y en una curva lenta el lean no es
         // cero (visto en la ruta 40: offset -28,8°). Ventana de 3 s con el ángulo estable.
-        private const val CALIB_PHASE_MS = 120_000L
+        private const val CALIB_PHASE_MS = 60_000L
         private const val CALIB_MIN_SPEED_KMH = 5f
         private const val CALIB_MAX_SPEED_KMH = 20f
         private const val CALIB_MAX_LATERAL_MS2 = 0.5f
@@ -666,7 +666,7 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
-     * ¿Sigue abierta la fase de calibración? Se cierra a los 2 minutos de empezar la
+     * ¿Sigue abierta la fase de calibración? Se cierra a los 1 minuto de empezar la
      * ruta; si se cierra sin haber calibrado se avisa y se sigue con el offset
      * guardado de la vez anterior.
      */
