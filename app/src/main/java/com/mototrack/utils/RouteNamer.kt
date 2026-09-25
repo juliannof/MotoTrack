@@ -52,8 +52,12 @@ object RouteNamer {
     }
 
     private class Spot(val urbanization: String?, val street: String?, val number: String?) {
-        /** Urbanización si la hay; si no, la calle con su número ("Calle Azor del Coto, 5") cuando se conoce. */
-        fun label(): String? = urbanization ?: street?.let { s -> number?.let { "$s, $it" } ?: s }
+        /**
+         * Urbanización si la hay; si no, la calle. En pantalla, con su número cuando se conoce
+         * ("Calle Azor del Coto, 5"); en el nombre de las rutas, sin número.
+         */
+        fun label(withNumber: Boolean): String? =
+            urbanization ?: street?.let { s -> if (withNumber) number?.let { "$s, $it" } ?: s else s }
     }
 
     private var lastNominatimMs = 0L
@@ -104,7 +108,7 @@ object RouteNamer {
      */
     fun nameAt(context: Context, lat: Double, lon: Double): String? {
         knownPlaceAt(lat, lon)?.let { return it }
-        spotAt(lat, lon)?.label()?.let { return it }
+        spotAt(lat, lon)?.label(withNumber = true)?.let { return it }
         if (!Geocoder.isPresent()) return null
         return try {
             @Suppress("DEPRECATION")
@@ -140,7 +144,7 @@ object RouteNamer {
         // Salida y llegada suelen ser donde aparcas: lugar propio, si no la urbanización,
         // si no la calle, y solo al final el barrio o municipio
         fun parkingAt(p: RoutePoint): String? = knownPlaceAt(p.latitude, p.longitude)
-            ?: spotAt(p.latitude, p.longitude)?.label()
+            ?: spotAt(p.latitude, p.longitude)?.label(withNumber = false)
             ?: placeAt(p)
 
         val from = parkingAt(valid.first()) ?: return null
