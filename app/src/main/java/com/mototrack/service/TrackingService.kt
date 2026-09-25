@@ -50,6 +50,7 @@ class TrackingService : Service(), SensorEventListener {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "mototrack_channel"
         private const val TAG = "TrackingService"
+        private const val SENSOR_DEBUG_TAG = "MOTOTRACK_SENSOR_DEBUG"
 
         // Por encima de este error (m) la posición viene de WiFi/antenas, no del
         // GPS: se guarda el punto, pero no se suma a la distancia (salta decenas
@@ -59,8 +60,14 @@ class TrackingService : Service(), SensorEventListener {
         // Clave nueva: los offsets guardados con el cálculo antiguo (roll de
         // getOrientation) no valen para la inclinación lateral actual
         private const val PREF_LEAN_OFFSET = "resting_lean_offset"
-        // Una moto no pasa de ~65° de inclinación; más allá es ruido de orientación
-        private const val MAX_PLAUSIBLE_LEAN_DEG = 70f
+        // La R1200RS homologa ~47°; más allá es ruido de orientación (rutas 39 y 24:
+        // 61,8° y 67° con el GPS marcando <25° de curva)
+        private const val MAX_PLAUSIBLE_LEAN_DEG = 50f
+        // El lean real cambia como mucho ~7° por cada 0,1 s (p99,9 en las rutas 23-40);
+        // saltos de 30-90° en una lectura son fallos del sensor de rotación. Tras uno,
+        // el valor se queda "pegado" ~1,2 s, así que se ignora un margen mayor
+        private const val MAX_LEAN_RATE_DEG_S = 150f
+        private const val LEAN_QUARANTINE_MS = 2_000L
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
@@ -76,6 +83,11 @@ class TrackingService : Service(), SensorEventListener {
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
+        // Máximo de la ruta: se toma de la aceleración sostenida ~0,5 s (un bache no
+        // es una aceleración) y se descarta lo que ninguna moto de calle alcanza
+        // (rutas 39/40: ráfagas de 20 m/s² con el GPS marcando <6 m/s²)
+        private const val ACCEL_PEAK_SMOOTHING = 0.08f
+        private const val MAX_PLAUSIBLE_ACCEL_MS2 = 12f
 
         // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
         private const val LIMIT_QUERY_MIN_DISTANCE_M = 30f
@@ -162,6 +174,12 @@ class TrackingService : Service(), SensorEventListener {
     private var lastGpsBearing = 0f
     private var restingAngleOffset = 0f
     private var rawLeanAngle = 0f
+    private var prevRawLean = Float.NaN
+    private var prevLeanEventNs = 0L
+    private var leanQuarantineUntilMs = 0L
+    private var sustainedAccel = 0f
+    private val lastRawAccel = FloatArray(3)   // con gravedad, para el log de depuración
+    private val lastRotVector = FloatArray(5)  // x, y, z, w, precisión estimada
     // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
     private var stillStartMs = 0L
     private var stillN = 0
@@ -235,6 +253,9 @@ class TrackingService : Service(), SensorEventListener {
         speedSumKmh = 0.0
         speedSamples = 0
         smoothedAccel = 0f
+        sustainedAccel = 0f
+        prevRawLean = Float.NaN
+        leanQuarantineUntilMs = 0L
         avgSpeed.postValue(0f)
         longitudinalAccel.postValue(0f)
         limitQueryLocation = null
@@ -429,8 +450,10 @@ class TrackingService : Service(), SensorEventListener {
         }
         smoothedAccel += ACCEL_SMOOTHING * (forward - smoothedAccel)
         longitudinalAccel.postValue(smoothedAccel)
-        // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
-        if (smoothedAccel > (maxAccel.value ?: 0f)) maxAccel.postValue(smoothedAccel)
+        sustainedAccel += ACCEL_PEAK_SMOOTHING * (smoothedAccel - sustainedAccel)
+        if (sustainedAccel in (maxAccel.value ?: 0f)..MAX_PLAUSIBLE_ACCEL_MS2) {
+            maxAccel.postValue(sustainedAccel)
+        }
     }
 
     /**
@@ -552,6 +575,7 @@ class TrackingService : Service(), SensorEventListener {
                     linearAcc[0].pow(2) + linearAcc[1].pow(2) + linearAcc[2].pow(2)
                 )
 
+                System.arraycopy(event.values, 0, lastRawAccel, 0, 3)
                 updateLongitudinalAccel(event.values)
 
                 currentAccel.postValue(accelMagnitude)
@@ -559,8 +583,11 @@ class TrackingService : Service(), SensorEventListener {
 
             Sensor.TYPE_ROTATION_VECTOR -> {
                 SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
+                System.arraycopy(event.values, 0, lastRotVector, 0, minOf(event.values.size, 5))
                 // Lectura no fiable: se conserva el último lean válido
-                rawLeanAngle = lateralLeanDegrees() ?: return
+                val lean = lateralLeanDegrees() ?: return
+                if (isLeanGlitch(lean, event.timestamp)) return
+                rawLeanAngle = lean
                 autoCalibrateWhenStill(rawLeanAngle)
                 val correctedLean = rawLeanAngle - restingAngleOffset
                 currentLeanDeg = correctedLean
@@ -577,6 +604,29 @@ class TrackingService : Service(), SensorEventListener {
                 }
             }
         }
+    }
+
+    /**
+     * Detecta saltos imposibles del lean: más de [MAX_LEAN_RATE_DEG_S] respecto a la
+     * lectura anterior. El valor tras el salto se queda pegado ~1 s, así que se abre
+     * una cuarentena en la que no se actualiza ni el lean ni los máximos. La tasa se
+     * mide contra la lectura anterior (no contra la última aceptada): si el móvil se
+     * recoloca de verdad, tras la cuarentena el nuevo valor se acepta.
+     */
+    private fun isLeanGlitch(lean: Float, eventNs: Long): Boolean {
+        val dtS = (eventNs - prevLeanEventNs) / 1e9f
+        val jump = if (prevRawLean.isNaN() || dtS <= 0f) 0f else abs(lean - prevRawLean)
+        val prev = prevRawLean
+        prevRawLean = lean
+        prevLeanEventNs = eventNs
+        val now = SystemClock.elapsedRealtime()
+        if (dtS > 0f && jump / dtS > MAX_LEAN_RATE_DEG_S) {
+            leanQuarantineUntilMs = now + LEAN_QUARANTINE_MS
+            Log.d(SENSOR_DEBUG_TAG, "lean glitch: ${fmt(prev)}° -> ${fmt(lean)}° en ${(dtS * 1000).toInt()} ms " +
+                "rv=${lastRotVector.joinToString(",") { String.format(Locale.US, "%.3f", it) }} " +
+                "acc=${lastRawAccel.joinToString(",") { fmt(it) }} gps=${fmt(lastGpsSpeed)} km/h")
+        }
+        return now < leanQuarantineUntilMs
     }
 
     /**
@@ -677,6 +727,9 @@ class TrackingService : Service(), SensorEventListener {
             }
             append(',').append(currentSpeedLimit.value ?: 0)
             append(String.format(Locale.US, ",%.2f", smoothedAccel))
+            // Datos crudos para diagnosticar: acelerómetro con gravedad y vector de rotación
+            append(String.format(Locale.US, ",%.2f,%.2f,%.2f", lastRawAccel[0], lastRawAccel[1], lastRawAccel[2]))
+            append(String.format(Locale.US, ",%.4f,%.4f,%.4f,%.4f,%.3f", lastRotVector[0], lastRotVector[1], lastRotVector[2], lastRotVector[3], lastRotVector[4]))
         }
     }
 
