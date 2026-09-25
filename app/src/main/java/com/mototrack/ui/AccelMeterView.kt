@@ -13,9 +13,9 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Vúmetro horizontal de aceleración longitudinal, igual que LeanMeterView: LEDs
- * redondeados que se encienden desde el centro, a la derecha al acelerar y a la
- * izquierda al frenar, con halo, barra central y marca del máximo.
+ * Vúmetro de aceleración longitudinal: gemelo de LeanMeterView pero en vertical.
+ * Los LEDs se encienden desde el centro hacia arriba al acelerar y hacia abajo al
+ * frenar, con los mismos LEDs redondeados, halo, barra central y marca del máximo.
  *
  * Igual que LeanMeterView, dibujamos a mano en un Canvas.
  */
@@ -29,11 +29,11 @@ class AccelMeterView @JvmOverloads constructor(
     private val ledsPerSide = 5
     private val step = maxAccel / ledsPerSide   // 1,5 m/s² por LED
 
-    // Positivo = acelerando (derecha), negativo = frenando (izquierda)
+    // Positivo = acelerando (arriba), negativo = frenando (abajo)
     private var accel = 0f
     // Máximo alcanzado en cada sentido (se queda marcado, como el "peak hold")
-    private var peakBrake = 0f
-    private var peakAccel = 0f
+    private var peakUp = 0f
+    private var peakDown = 0f
 
     private val density = resources.displayMetrics.density
     private val ledPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -52,14 +52,14 @@ class AccelMeterView @JvmOverloads constructor(
 
     fun setAccel(value: Float) {
         accel = value
-        if (value < 0) peakBrake = max(peakBrake, -value) else peakAccel = max(peakAccel, value)
+        if (value < 0) peakDown = max(peakDown, -value) else peakUp = max(peakUp, value)
         invalidate()
     }
 
     fun reset() {
         accel = 0f
-        peakBrake = 0f
-        peakAccel = 0f
+        peakUp = 0f
+        peakDown = 0f
         invalidate()
     }
 
@@ -76,8 +76,8 @@ class AccelMeterView @JvmOverloads constructor(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(
-            getDefaultSize(suggestedMinimumWidth, widthMeasureSpec),
-            resolveSize((32 * density).toInt(), heightMeasureSpec)
+            resolveSize((32 * density).toInt(), widthMeasureSpec),
+            resolveSize((120 * density).toInt(), heightMeasureSpec)
         )
     }
 
@@ -86,29 +86,29 @@ class AccelMeterView @JvmOverloads constructor(
 
         val w = (width - paddingLeft - paddingRight).toFloat()
         val h = (height - paddingTop - paddingBottom).toFloat()
-        val cx = paddingLeft + w / 2f
+        val cy = paddingTop + h / 2f
         val gap = 3 * density
         val centerGap = 8 * density
-        val ledW = (w - centerGap - gap * (ledsPerSide * 2 - 2)) / (ledsPerSide * 2)
-        // Los LEDs no pasan de ~2,2 veces su ancho, para que parezcan LEDs y no barras
-        val ledH = min(h, ledW * 2.2f)
-        val top = paddingTop + (h - ledH) / 2f
-        val radius = ledW * 0.4f
+        val ledT = (h - centerGap - gap * (ledsPerSide * 2 - 2)) / (ledsPerSide * 2)
+        // Igual que en la inclinación: los LEDs no pasan de ~2,2 veces su grosor
+        val ledL = min(w, ledT * 2.2f)
+        val left = paddingLeft + (w - ledL) / 2f
+        val radius = ledT * 0.4f
 
-        val brakeLevel = if (accel < 0) -accel else 0f
-        val accelLevel = if (accel > 0) accel else 0f
+        val upLevel = if (accel > 0) accel else 0f
+        val downLevel = if (accel < 0) -accel else 0f
 
-        for (side in arrayOf(-1, 1)) {   // -1 = izquierda (frena), 1 = derecha (acelera)
-            val level = if (side < 0) brakeLevel else accelLevel
-            val peak = if (side < 0) peakBrake else peakAccel
+        for (side in arrayOf(1, -1)) {   // 1 = arriba (acelera), -1 = abajo (frena)
+            val level = if (side > 0) upLevel else downLevel
+            val peak = if (side > 0) peakUp else peakDown
             val peakIndex = ceil(peak / step).toInt() - 1
 
             for (i in 0 until ledsPerSide) {
                 val value = (i + 1) * step
                 // i = 0 es el LED junto al centro; crecen hacia fuera
-                val inner = cx + side * (centerGap / 2 + i * (ledW + gap))
-                val left = if (side < 0) inner - ledW else inner
-                rect.set(left, top, left + ledW, top + ledH)
+                val inner = cy - side * (centerGap / 2 + i * (ledT + gap))
+                val top = if (side > 0) inner - ledT else inner
+                rect.set(left, top, left + ledL, top + ledT)
 
                 // Se enciende al pasar la mitad de su tramo (zona muerta de 0,75 m/s²)
                 val lit = level >= value - step / 2
@@ -140,7 +140,7 @@ class AccelMeterView @JvmOverloads constructor(
         // Sin aceleración: barra central iluminada, como "moto recta" en la inclinación
         val steady = abs(accel) < step / 2
         val barHalf = 1.5f * density
-        rect.set(cx - barHalf, top, cx + barHalf, top + ledH)
+        rect.set(left, cy - barHalf, left + ledL, cy + barHalf)
         if (steady) {
             ledPaint.color = colorGreen
             ledPaint.alpha = 60
