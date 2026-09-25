@@ -72,6 +72,17 @@ class TrackingService : Service(), SensorEventListener {
         private const val CALIB_MIN_DISTANCE_M = 200f
         private const val CALIB_STOPPED_SPEED_KMH = 1f
         private const val CALIB_WINDOW_MS = 3_000L
+        // Marcha en recta: rodando >15 km/h, sin fuerza lateral y con el rumbo GPS estable.
+        // Rodando recto la moto va derecha, así que su ángulo medio es una referencia del
+        // cero independiente de la parada: si el ángulo parado difiere más de 4°, la moto
+        // estaba ladeada (pie en el suelo, caballete) y esa parada no vale para calibrar.
+        private const val STRAIGHT_MIN_SPEED_KMH = 15f
+        private const val STRAIGHT_MAX_LATERAL_MS2 = 0.5f
+        private const val STRAIGHT_MAX_BEARING_DELTA_DEG = 4f
+        private const val STRAIGHT_MIN_TIME_MS = 3_000L
+        private const val STRAIGHT_MAX_FIX_AGE_S = 1.6
+        private const val CALIB_MAX_DIFF_FROM_STRAIGHT_DEG = 4f
+        private const val LATERAL_SMOOTHING = 0.02f
         private const val CALIB_MAX_STD_DEG = 0.5
         // Una inclinación del soporte mayor que esto no es del soporte: se ignora
         private const val CALIB_MAX_OFFSET_DEG = 15f
@@ -184,6 +195,14 @@ class TrackingService : Service(), SensorEventListener {
     // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
     private var stillStartMs = 0L
     private var stillN = 0
+    // Detector de marcha en recta y ángulo medio rodando recto (referencia del cero)
+    @Volatile private var lateralAccelMean = 0f
+    @Volatile private var bearingSteady = false
+    private var prevBearing = Float.NaN
+    private var straightSinceMs = 0L
+    private var straightLeanRef = Float.NaN
+    private var straightRefSum = 0.0
+    private var straightRefN = 0
     // Ya se calibró en esta ruta (una vez por ruta)
     private var calibratedThisRide = false
     private var stillSum = 0.0
@@ -262,6 +281,12 @@ class TrackingService : Service(), SensorEventListener {
         maxAltitude.postValue(Double.NaN)
         minAltitude.postValue(Double.NaN)
         calibratedThisRide = false
+        straightSinceMs = 0L
+        straightLeanRef = Float.NaN
+        straightRefSum = 0.0
+        straightRefN = 0
+        prevBearing = Float.NaN
+        bearingSteady = false
         stillN = 0
         calibrationStatus.postValue(CalibrationStatus.WAITING)
         avgSpeed.postValue(0f)
@@ -411,6 +436,14 @@ class TrackingService : Service(), SensorEventListener {
         }
 
         lastGpsSpeed   = location.speed * 3.6f   // m/s → km/h
+        // Rumbo estable entre fixes: dato del detector de marcha en recta
+        bearingSteady = if (location.hasBearing() && lastGpsSpeed >= STRAIGHT_MIN_SPEED_KMH &&
+            !prevBearing.isNaN()
+        ) {
+            val d = abs(((location.bearing - prevBearing + 540f) % 360f) - 180f)
+            d < STRAIGHT_MAX_BEARING_DELTA_DEG
+        } else false
+        prevBearing = if (location.hasBearing()) location.bearing else Float.NaN
         lastGpsBearing = location.bearing
         lastGpsAlt     = msl.of(location)
         lastLocation   = location
@@ -460,13 +493,19 @@ class TrackingService : Service(), SensorEventListener {
         val horiz = hypot(zx, zy)
 
         // Móvil tumbado (pantalla hacia arriba): no hay "adelante" definido
+        var lateral = 0f
         val forward = if (horiz < MIN_SCREEN_VERTICALITY) 0f else {
             val fx = -zx / horiz
             val fy = -zy / horiz
             val east  = rotMatrix[0] * a[0] + rotMatrix[1] * a[1] + rotMatrix[2] * a[2]
             val north = rotMatrix[3] * a[0] + rotMatrix[4] * a[1] + rotMatrix[5] * a[2]
+            // Perpendicular a "adelante": la fuerza de las curvas
+            lateral = east * fy - north * fx
             east * fx + north * fy
         }
+        // Media CON signo: la vibración del motor se compensa y queda ~0; una curva mantiene
+        // la fuerza lateral un buen rato. (La media del valor absoluto nunca baja de ~0,6.)
+        lateralAccelMean += LATERAL_SMOOTHING * (lateral - lateralAccelMean)
         accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
         smoothedAccel = if (abs(accelFilter) < ACCEL_DEADBAND) 0f else accelFilter
         longitudinalAccel.postValue(smoothedAccel)
@@ -651,14 +690,40 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
+     * ¿Vamos recto? En marcha a más de 15 km/h con una posición reciente, sin fuerza
+     * lateral y con el rumbo GPS estable durante al menos 3 s. Mientras dura, el ángulo
+     * medio es la referencia del cero (moto derecha), independiente de la parada.
+     */
+    private fun trackStraightRiding(raw: Float) {
+        val fixAgeS = lastLocation?.let {
+            (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1e9
+        } ?: Double.MAX_VALUE
+        val straight = lastGpsSpeed >= STRAIGHT_MIN_SPEED_KMH && fixAgeS < STRAIGHT_MAX_FIX_AGE_S &&
+            abs(lateralAccelMean) < STRAIGHT_MAX_LATERAL_MS2 && bearingSteady
+        if (!straight) { straightSinceMs = 0L; return }
+        val now = SystemClock.elapsedRealtime()
+        if (straightSinceMs == 0L) straightSinceMs = now
+        if (now - straightSinceMs >= STRAIGHT_MIN_TIME_MS) {
+            // Media de todo el tiempo recto de la ruta: rodando recto hay ruido de varios
+            // grados (la dirección se corrige), y así se promedia
+            straightRefSum += raw
+            straightRefN++
+            straightLeanRef = (straightRefSum / straightRefN).toFloat()
+        }
+    }
+
+    /**
      * Fija el cero de inclinación con la moto parada y derecha, una vez por ruta y solo
-     * después de haber recorrido una distancia mínima (ver CALIB_MIN_DISTANCE_M).
+     * después de haber recorrido una distancia mínima (CALIB_MIN_DISTANCE_M) y de haber
+     * rodado recto (hay referencia). Si el ángulo parado difiere de la referencia, la
+     * moto está ladeada (pie en el suelo): no vale y se espera a otra parada.
      * Se evalúa en cada lectura del sensor (no en cada fix GPS: parado no llegan fixes).
      */
     private fun autoCalibrateWhenStill(raw: Float) {
+        trackStraightRiding(raw)
         if (calibratedThisRide) return
         val stopped = lastGpsSpeed < CALIB_STOPPED_SPEED_KMH
-        if (totalDistance * 1000f < CALIB_MIN_DISTANCE_M || !stopped) {
+        if (totalDistance * 1000f < CALIB_MIN_DISTANCE_M || straightLeanRef.isNaN() || !stopped) {
             stillN = 0
             setCalibrationStatus(CalibrationStatus.WAITING)
             return
@@ -673,6 +738,10 @@ class TrackingService : Service(), SensorEventListener {
         val std = sqrt((stillSumSq / stillN - mean * mean).coerceAtLeast(0.0))
         stillN = 0
         if (std >= CALIB_MAX_STD_DEG || abs(mean) > CALIB_MAX_OFFSET_DEG) return
+        if (abs(mean - straightLeanRef) > CALIB_MAX_DIFF_FROM_STRAIGHT_DEG) {
+            Log.i(TAG, "Calibración descartada: parado ${fmt(mean.toFloat())}° vs recto ${fmt(straightLeanRef)}° (moto ladeada)")
+            return
+        }
         calibratedThisRide = true
         setCalibrationStatus(CalibrationStatus.DONE)
         if (abs(mean - restingAngleOffset) > 0.3) {
