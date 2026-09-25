@@ -65,10 +65,13 @@ class TrackingService : Service(), SensorEventListener {
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
-        // Autocalibración: solo parado (el último fix va a <3 km/h), ventana de 3 s
-        // y desviación <0,5°. Rodando despacio o en una curva lenta el lean no es
-        // cero y se "calibraría" la inclinación real (visto en la ruta 40: offset -28,8°).
+        // Autocalibración del cero de inclinación (ventana de 3 s, desviación <0,5°).
+        // La calibración inicial de la ruta vale por debajo de 20 km/h; las siguientes
+        // solo parado. En ambos casos sin fuerza lateral: en una curva lenta el lean no
+        // es cero y se "calibraría" la inclinación real (visto en la ruta 40: offset -28,8°).
+        private const val CALIB_INITIAL_MAX_SPEED_KMH = 20f
         private const val CALIB_MAX_SPEED_KMH = 3f
+        private const val CALIB_MAX_LATERAL_MS2 = 0.5f
         private const val CALIB_WINDOW_MS = 3_000L
         private const val CALIB_MAX_STD_DEG = 0.5
         // Una inclinación del soporte mayor que esto no es del soporte: se ignora
@@ -77,6 +80,7 @@ class TrackingService : Service(), SensorEventListener {
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
+        private const val LATERAL_SMOOTHING = 0.05f
         // Por debajo de esto es ruido y vibración del móvil, no aceleración de marcha
         private const val ACCEL_DEADBAND = 0.4f
 
@@ -94,6 +98,7 @@ class TrackingService : Service(), SensorEventListener {
         val currentSpeed    = MutableLiveData(0f)        // km/h
         val currentSpeedLimit = MutableLiveData(0)       // km/h de la vía; 0 = desconocido
         val speedLimitEstimated = MutableLiveData(false) // true: deducido del tipo de vía
+        val calibrationStatus = MutableLiveData(CalibrationStatus.OFF) // calibración del cero de inclinación
         val overSpeedLimit  = MutableLiveData(false)     // true: por encima del límite (+ margen)
         val avgSpeed        = MutableLiveData(0f)        // km/h, media de la ruta en curso
         val longitudinalAccel = MutableLiveData(0f)      // m/s²: + acelerando, - frenando (sentido de la marcha)
@@ -171,6 +176,10 @@ class TrackingService : Service(), SensorEventListener {
     // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
     private var stillStartMs = 0L
     private var stillN = 0
+    // Aceleración lateral media (valor absoluto, filtrada): ~0 en recta, alta en curva
+    @Volatile private var lateralAccelAbs = 0f
+    // Ya se calibró en esta ruta (tras la inicial solo se recalibra parado)
+    private var calibratedThisRide = false
     private var stillSum = 0.0
     private var stillSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
@@ -244,6 +253,8 @@ class TrackingService : Service(), SensorEventListener {
         speedSamples = 0
         accelFilter = 0f
         smoothedAccel = 0f
+        calibratedThisRide = false
+        calibrationStatus.postValue(CalibrationStatus.WAITING)
         avgSpeed.postValue(0f)
         longitudinalAccel.postValue(0f)
         limitQueryLocation = null
@@ -278,6 +289,7 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     private fun stopTracking() {
+        calibrationStatus.postValue(CalibrationStatus.OFF)
         // Se llama desde DETENER y otra vez desde onDestroy: solo la primera
         // vez hay ruta que cerrar
         val routeId = activeRouteId
@@ -432,13 +444,17 @@ class TrackingService : Service(), SensorEventListener {
         val horiz = hypot(zx, zy)
 
         // Móvil tumbado (pantalla hacia arriba): no hay "adelante" definido
+        var lateral = 0f
         val forward = if (horiz < MIN_SCREEN_VERTICALITY) 0f else {
             val fx = -zx / horiz
             val fy = -zy / horiz
             val east  = rotMatrix[0] * a[0] + rotMatrix[1] * a[1] + rotMatrix[2] * a[2]
             val north = rotMatrix[3] * a[0] + rotMatrix[4] * a[1] + rotMatrix[5] * a[2]
+            // Perpendicular a "adelante": la fuerza de las curvas
+            lateral = east * fy - north * fx
             east * fx + north * fy
         }
+        lateralAccelAbs += LATERAL_SMOOTHING * (abs(lateral) - lateralAccelAbs)
         accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
         smoothedAccel = if (abs(accelFilter) < ACCEL_DEADBAND) 0f else accelFilter
         longitudinalAccel.postValue(smoothedAccel)
@@ -593,11 +609,24 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
-     * Fija el cero de inclinación con la moto parada y el ángulo estable.
+     * Fija el cero de inclinación cuando la moto va derecha y el ángulo es estable.
+     * La calibración inicial de la ruta vale hasta 20 km/h; después, solo parado.
+     * "Derecha" se comprueba con la aceleración lateral, que es la física de la
+     * curva: si es casi cero, la moto no está inclinada para tomarla.
      * Se evalúa en cada lectura del sensor (no en cada fix GPS: parado no llegan fixes).
      */
+    private fun setCalibrationStatus(status: CalibrationStatus) {
+        if (calibrationStatus.value != status) calibrationStatus.postValue(status)
+    }
+
     private fun autoCalibrateWhenStill(raw: Float) {
-        if (lastGpsSpeed >= CALIB_MAX_SPEED_KMH) { stillN = 0; return }
+        val maxSpeed = if (calibratedThisRide) CALIB_MAX_SPEED_KMH else CALIB_INITIAL_MAX_SPEED_KMH
+        if (lastGpsSpeed >= maxSpeed || lateralAccelAbs > CALIB_MAX_LATERAL_MS2) {
+            stillN = 0
+            if (!calibratedThisRide) setCalibrationStatus(CalibrationStatus.WAITING)
+            return
+        }
+        if (!calibratedThisRide) setCalibrationStatus(CalibrationStatus.MEASURING)
         val now = SystemClock.elapsedRealtime()
         if (stillN == 0) { stillStartMs = now; stillSum = 0.0; stillSumSq = 0.0 }
         stillN++; stillSum += raw; stillSumSq += raw.toDouble() * raw
@@ -607,6 +636,8 @@ class TrackingService : Service(), SensorEventListener {
         val std = sqrt((stillSumSq / stillN - mean * mean).coerceAtLeast(0.0))
         stillN = 0
         if (std >= CALIB_MAX_STD_DEG || abs(mean) > CALIB_MAX_OFFSET_DEG) return
+        calibratedThisRide = true
+        setCalibrationStatus(CalibrationStatus.DONE)
         if (abs(mean - restingAngleOffset) > 0.3) {
             Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(mean.toFloat())}°")
             restingAngleOffset = mean.toFloat()
@@ -792,4 +823,12 @@ class TrackingService : Service(), SensorEventListener {
         val speed = String.format("%.0f km/h | %.1f km", lastGpsSpeed, totalDistance)
         nm.notify(NOTIFICATION_ID, buildNotification(speed))
     }
+}
+
+/** Estado de la calibración inicial del ángulo de inclinación, para avisar al usuario. */
+enum class CalibrationStatus {
+    OFF,        // sin ruta en curso
+    WAITING,    // a la espera de poder calibrar (recto y por debajo de 20 km/h)
+    MEASURING,  // midiendo el cero de inclinación: no hay que inclinar la moto
+    DONE        // calibrado
 }

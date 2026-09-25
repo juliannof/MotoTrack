@@ -35,6 +35,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val longitudinalAccel = TrackingService.longitudinalAccel
     val speedLimitEstimated = TrackingService.speedLimitEstimated
     val overSpeedLimit = TrackingService.overSpeedLimit
+    val calibrationStatus = TrackingService.calibrationStatus
     val currentLean   = TrackingService.currentLean
     val currentLeanSigned = TrackingService.currentLeanSigned
     val currentAccel  = TrackingService.currentAccel

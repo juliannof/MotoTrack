@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.mototrack.R
 import com.mototrack.databinding.FragmentDashboardBinding
+import com.mototrack.service.CalibrationStatus
 import com.mototrack.utils.AltitudeMonitor
 import java.text.SimpleDateFormat
 import java.util.*
@@ -80,6 +81,9 @@ class DashboardFragment : Fragment() {
             binding.tvAltitude.text = String.format("%.0f m", alt)
         }
 
+        // Calibración del ángulo: se avisa en la propia tarjeta de inclinación
+        viewModel.calibrationStatus.observe(viewLifecycleOwner) { showCalibration(it) }
+
         // Distancia
         viewModel.distanceKm.observe(viewLifecycleOwner) { km ->
             binding.tvDistance.text = String.format("%.2f km", km)
@@ -126,6 +130,28 @@ class DashboardFragment : Fragment() {
                 binding.recordingIndicator.visibility = View.GONE
                 resetUI()
             }
+        }
+    }
+
+    private fun showCalibration(status: CalibrationStatus) {
+        val label = binding.tvLeanLabel
+        val (text, colorRes) = when (status) {
+            CalibrationStatus.MEASURING -> "INCLINACIÓN · CALIBRANDO… NO INCLINES" to R.color.accent_orange
+            CalibrationStatus.WAITING -> "INCLINACIÓN · SIN CALIBRAR" to R.color.text_secondary
+            CalibrationStatus.DONE -> "INCLINACIÓN · CALIBRADO ✓" to R.color.accent_green
+            CalibrationStatus.OFF -> "INCLINACIÓN" to R.color.text_secondary
+        }
+        label.text = text
+        label.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
+        // El "calibrado" se muestra unos segundos y vuelve a la etiqueta normal
+        if (status == CalibrationStatus.DONE) {
+            label.postDelayed({
+                if (_binding != null && viewModel.calibrationStatus.value == CalibrationStatus.DONE) {
+                    binding.tvLeanLabel.text = "INCLINACIÓN"
+                    binding.tvLeanLabel.setTextColor(
+                        ContextCompat.getColor(requireContext(), R.color.text_secondary))
+                }
+            }, 3000)
         }
     }
 
