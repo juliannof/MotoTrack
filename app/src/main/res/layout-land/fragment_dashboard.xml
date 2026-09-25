@@ -339,6 +339,15 @@
                     android:text="0 puntos"
                     android:textColor="@color/text_secondary"
                     android:textSize="11sp"/>
+
+                <TextView
+                    android:id="@+id/tv_altitude"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Alt: — m"
+                    android:textColor="@color/accent_cyan"
+                    android:textSize="13sp"
+                    android:textStyle="bold"/>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

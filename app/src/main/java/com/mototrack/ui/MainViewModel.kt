@@ -39,6 +39,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentLeanSigned = TrackingService.currentLeanSigned
     val currentAccel  = TrackingService.currentAccel
     val currentBearing = TrackingService.currentBearing
+    val currentAltitude = TrackingService.currentAltitude
     val pointCount    = TrackingService.pointCount
     val maxSpeed      = TrackingService.maxSpeed
     val maxLean       = TrackingService.maxLean
