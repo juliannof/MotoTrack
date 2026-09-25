@@ -21,6 +21,7 @@ import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
 import kotlin.math.asin
 import kotlin.math.sin
+import com.mototrack.utils.Compass
 import com.mototrack.utils.MslAltitude
 import com.mototrack.utils.SpeedLimitCache
 import com.mototrack.ui.MainActivity
@@ -131,6 +132,7 @@ class TrackingService : Service(), SensorEventListener {
         val currentLeanSigned = MutableLiveData(0f)      // grados: - izquierda, + derecha
         val currentAccel    = MutableLiveData(0f)        // m/s²
         val currentBearing  = MutableLiveData(0f)        // grados
+        val compassHeading  = MutableLiveData<Float?>(null)   // rumbo por la brújula del móvil, sin GPS
         val currentAltitude = MutableLiveData(0.0)       // metros
         // Alturas extremas de la ruta en curso (m); NaN = todavía sin dato. Pueden ser
         // negativas: hay rutas que pasan por debajo del nivel del mar.
@@ -714,6 +716,10 @@ class TrackingService : Service(), SensorEventListener {
 
             Sensor.TYPE_ROTATION_VECTOR -> {
                 SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
+                Compass.azimuth(rotMatrix)?.let { az ->
+                    val prev = compassHeading.value
+                    if (prev == null || angularDiff(prev, az) >= 2f) compassHeading.postValue(az)
+                }
                 // Lectura no fiable: se conserva el último lean válido
                 rawLeanAngle = lateralLeanDegrees() ?: return
                 autoCalibrateWhenStill(rawLeanAngle)
@@ -839,6 +845,9 @@ class TrackingService : Service(), SensorEventListener {
     /** GPS si el error es pequeño; si no, la posición viene de WiFi/antenas. */
     private fun sourceOf(location: Location) =
         if (location.accuracy <= MAX_ACCURACY_FOR_DISTANCE_M) "gps" else "red"
+
+    /** Diferencia entre dos rumbos en grados (0..180), cruzando el 0/360. */
+    private fun angularDiff(a: Float, b: Float) = abs(((a - b + 540f) % 360f) - 180f)
 
     private fun fmt(v: Float) = String.format(Locale.US, "%.1f", v)
 

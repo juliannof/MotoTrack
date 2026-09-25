@@ -40,17 +40,23 @@ class DashboardFragment : Fragment() {
     private var lastHeading = Float.NaN
 
     /**
-     * Punto cardinal y grados del rumbo GPS. El GPS solo da rumbo fiable en movimiento
-     * (más de 3 km/h): parado se conserva el último y se muestra en gris.
+     * Punto cardinal y grados. En marcha (más de 3 km/h) el rumbo del GPS, que es el más
+     * fiable; parado, la brújula del móvil (con el móvil en el soporte, hacia donde mira
+     * la moto). Si no hay ninguno se conserva el último, en gris.
      */
     private fun updateHeading() {
         val moving = (viewModel.currentSpeed.value ?: 0f) >= 3f
-        viewModel.currentBearing.value?.let { if (moving) lastHeading = it }
+        val compass = viewModel.compassHeading.value
+        val live = when {
+            moving -> viewModel.currentBearing.value
+            else -> compass
+        }
+        if (live != null) lastHeading = live
         val h = lastHeading
         binding.tvHeading.text = if (h.isNaN()) "—" else CARDINALS[(((h % 360f) + 22.5f) / 45f).toInt() % 8]
         binding.tvHeadingDeg.text = if (h.isNaN()) "" else String.format("%.0f°", h)
         val color = ContextCompat.getColor(
-            requireContext(), if (moving && !h.isNaN()) R.color.accent_cyan else R.color.text_secondary)
+            requireContext(), if (live != null) R.color.accent_cyan else R.color.text_secondary)
         binding.tvHeading.setTextColor(color)
     }
 
@@ -72,6 +78,7 @@ class DashboardFragment : Fragment() {
 
         // Dirección de la marcha (N/S/E/O)
         viewModel.currentBearing.observe(viewLifecycleOwner) { updateHeading() }
+        viewModel.compassHeading.observe(viewLifecycleOwner) { updateHeading() }
 
         // Velocidad
         viewModel.currentSpeed.observe(viewLifecycleOwner) { speed ->

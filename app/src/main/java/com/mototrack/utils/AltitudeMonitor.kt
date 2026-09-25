@@ -1,6 +1,10 @@
 package com.mototrack.utils
 
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +28,22 @@ class AltitudeMonitor(context: Context) {
     private val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private val msl = MslAltitude(appContext)
     private var running = false
+    private val sensors = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val rotMatrix = FloatArray(9)
+
+    // Rumbo por la brújula del móvil cuando no se graba (parado o sin GPS)
+    private val compassListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
+            Compass.azimuth(rotMatrix)?.let { az ->
+                val prev = TrackingService.compassHeading.value
+                if (prev == null || Math.abs(((prev - az + 540f) % 360f) - 180f) >= 2f) {
+                    TrackingService.compassHeading.postValue(az)
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -39,6 +59,9 @@ class AltitudeMonitor(context: Context) {
             val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L).build()
             fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
             locationManager.addNmeaListener(msl.nmeaListener, Handler(Looper.getMainLooper()))
+            sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let {
+                sensors.registerListener(compassListener, it, SensorManager.SENSOR_DELAY_UI)
+            }
             running = true
         } catch (e: SecurityException) {
             Log.w("AltitudeMonitor", "Sin permiso de ubicación: ${e.message}")
@@ -49,6 +72,7 @@ class AltitudeMonitor(context: Context) {
         if (!running) return
         fused.removeLocationUpdates(callback)
         locationManager.removeNmeaListener(msl.nmeaListener)
+        sensors.unregisterListener(compassListener)
         running = false
     }
 }
