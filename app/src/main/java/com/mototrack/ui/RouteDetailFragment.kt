@@ -267,10 +267,26 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         // Orden fijo: velocidad, aceleración, ángulo lateral, altura del terreno
         charts = listOf(
             setupChart(binding.chartSpeed, points.map { it.speedKmh }, "Velocidad", "km/h", "%.0f", "#00BCD4", time),
-            setupChart(binding.chartAccel, points.map { it.accelTotal }, "Aceleración", "m/s²", "%.2f", "#8BC34A", time),
+            setupAccelChart(points, time),
             setupChart(binding.chartLean, points.map { it.leanAngle }, "Ángulo lateral", "°", "%.1f", "#FF5722", time),
             setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
         )
+    }
+
+    /**
+     * Aceleración en el sentido de la marcha. Las rutas grabadas antes de guardarla
+     * (todo a 0) no tienen dato: se avisa en vez de dibujar una línea plana.
+     */
+    private fun setupAccelChart(points: List<RoutePoint>, time: (Int) -> String): LineChart {
+        val chart = binding.chartAccel
+        if (points.all { it.longAccel == 0f }) {
+            chart.clear()
+            chart.setNoDataText("Sin aceleración: ruta grabada antes de guardarla")
+            chart.setNoDataTextColor(Color.parseColor("#888888"))
+            chart.invalidate()
+            return chart
+        }
+        return setupChart(chart, points.map { it.longAccel }, "Aceleración", "m/s²", "%+.1f", "#8BC34A", time)
     }
 
     @SuppressLint("ClickableViewAccessibility")

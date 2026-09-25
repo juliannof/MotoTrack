@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Route::class, RoutePoint::class, SpeedLimitCacheEntry::class],
-    version = 6,  // era 5
+    version = 7,  // era 6
     exportSchema = false
 )
 abstract class MotoTrackDatabase : RoomDatabase() {
@@ -60,6 +60,13 @@ abstract class MotoTrackDatabase : RoomDatabase() {
             }
         }
 
+        /** v6 -> v7: aceleración longitudinal en cada punto (las rutas anteriores quedan a 0). */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE route_points ADD COLUMN longAccel REAL NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var INSTANCE: MotoTrackDatabase? = null
 
@@ -69,7 +76,7 @@ abstract class MotoTrackDatabase : RoomDatabase() {
                     context.applicationContext,
                     MotoTrackDatabase::class.java,
                     "mototrack_database"
-                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
+                ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build()
                 INSTANCE = instance
                 instance
             }

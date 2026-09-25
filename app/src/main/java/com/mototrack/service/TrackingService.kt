@@ -429,6 +429,8 @@ class TrackingService : Service(), SensorEventListener {
         }
         smoothedAccel += ACCEL_SMOOTHING * (forward - smoothedAccel)
         longitudinalAccel.postValue(smoothedAccel)
+        // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
+        if (smoothedAccel > (maxAccel.value ?: 0f)) maxAccel.postValue(smoothedAccel)
     }
 
     /**
@@ -553,9 +555,6 @@ class TrackingService : Service(), SensorEventListener {
                 updateLongitudinalAccel(event.values)
 
                 currentAccel.postValue(accelMagnitude)
-                if (accelMagnitude > (maxAccel.value ?: 0f)) {
-                    maxAccel.postValue(accelMagnitude)
-                }
             }
 
             Sensor.TYPE_ROTATION_VECTOR -> {
@@ -707,6 +706,7 @@ class TrackingService : Service(), SensorEventListener {
                 accelY        = linearAcc[1],
                 accelZ        = linearAcc[2],
                 accelTotal    = accelMagnitude,
+                longAccel     = smoothedAccel,
                 leanAngle     = currentLeanDeg,
                 bearing       = location.bearing,
                 hdop          = if (location.hasAccuracy()) location.accuracy else -1f,

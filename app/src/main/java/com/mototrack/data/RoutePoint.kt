@@ -56,5 +56,8 @@ data class RoutePoint(
     // Límite de velocidad de la vía (OpenStreetMap), en km/h; 0 = desconocido
     val speedLimitKmh: Int = 0,
     // true si el límite se dedujo del tipo de vía y no de una etiqueta maxspeed
-    val speedLimitEstimated: Boolean = false
+    val speedLimitEstimated: Boolean = false,
+
+    // Aceleración en el sentido de la marcha (m/s²): + acelerando, - frenando
+    val longAccel: Float = 0f
 )
