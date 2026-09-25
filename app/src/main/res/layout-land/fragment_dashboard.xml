@@ -250,10 +250,18 @@
                 android:paddingStart="10dp"
                 android:paddingEnd="8dp">
 
-                <!-- Etiqueta (o aviso de calibración) y máximos, a la izquierda -->
+                <!-- Vúmetro: izquierda ← 0 → derecha, con el máximo de cada lado marcado -->
+                <com.mototrack.ui.LeanMeterView
+                    android:id="@+id/lean_meter"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1" />
+
+                <!-- Etiqueta (o aviso de calibración) y máximos, a la derecha -->
                 <LinearLayout
                     android:layout_width="140dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
                     android:orientation="vertical">
 
                     <TextView
@@ -290,13 +298,6 @@
                             android:textSize="12sp" />
                     </LinearLayout>
                 </LinearLayout>
-
-                <!-- Vúmetro: izquierda ← 0 → derecha, con el máximo de cada lado marcado -->
-                <com.mototrack.ui.LeanMeterView
-                    android:id="@+id/lean_meter"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
