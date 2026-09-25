@@ -136,6 +136,9 @@ class TrackingService : Service(), SensorEventListener {
         val currentBearing  = MutableLiveData(0f)        // grados
         val compassHeading  = MutableLiveData<Float?>(null)   // rumbo por la brújula del móvil, sin GPS
         val currentPlace    = MutableLiveData<String?>(null)  // urbanización o calle donde está la moto
+        val currentPosition = MutableLiveData<DoubleArray?>(null) // [lat, lon] de la última posición
+        // true en cuanto se calibra una vez desde que se abrió la app (el mapa del Dashboard se oculta)
+        val calibratedSinceAppStart = MutableLiveData(false)
         val currentAltitude = MutableLiveData(0.0)       // metros
         // Alturas extremas de la ruta en curso (m); NaN = todavía sin dato. Pueden ser
         // negativas: hay rutas que pasan por debajo del nivel del mar.
@@ -477,6 +480,7 @@ class TrackingService : Service(), SensorEventListener {
         currentSpeed.postValue(lastGpsSpeed)
         updateOverLimit()
         currentBearing.postValue(lastGpsBearing)
+        currentPosition.postValue(doubleArrayOf(location.latitude, location.longitude))
         if (sourceOf(location) == "gps") PlaceTracker.update(this, location.latitude, location.longitude)
         currentAltitude.postValue(lastGpsAlt)
         val hi = maxAltitude.value ?: Double.NaN
@@ -805,6 +809,7 @@ class TrackingService : Service(), SensorEventListener {
         }
         calibratedThisRide = true
         setCalibrationStatus(CalibrationStatus.DONE)
+        calibratedSinceAppStart.postValue(true)
         if (abs(mean - restingAngleOffset) > 0.3) {
             Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(mean.toFloat())}°")
             restingAngleOffset = mean.toFloat()

@@ -6,6 +6,11 @@ import android.os.Bundle
 import android.view.*
 import android.widget.EditText
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.mototrack.R
@@ -22,6 +27,8 @@ class DashboardFragment : Fragment() {
     private val binding get() = _binding!!
     private lateinit var viewModel: MainViewModel
     private var altitudeMonitor: AltitudeMonitor? = null
+    private var googleMap: GoogleMap? = null
+    private var mapCentered = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentDashboardBinding.inflate(inflater, container, false)
@@ -32,6 +39,7 @@ class DashboardFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(requireActivity())[MainViewModel::class.java]
 
+        setupMap(savedInstanceState)
         setupObservers()
         setupButtons()
     }
@@ -269,10 +277,56 @@ class DashboardFragment : Fragment() {
         binding.leanMeter.reset()
     }
 
+    // ── Mapa de la zona (de fondo de las tarjetas de abajo a la derecha) ─────────────
+    // El mapa queda siempre debajo y las tarjetas semitransparentes por encima, con los
+    // indicadores a la vista.
+
+    private fun setupMap(savedInstanceState: Bundle?) {
+        val mapView = binding.dashboardMap ?: return
+        mapView.onCreate(savedInstanceState?.getBundle(MAP_STATE))
+        mapView.getMapAsync { map ->
+            googleMap = map
+            map.uiSettings.apply {
+                setAllGesturesEnabled(false)
+                isZoomControlsEnabled = false
+                isMapToolbarEnabled = false
+                isMyLocationButtonEnabled = false
+            }
+            try {
+                map.isMyLocationEnabled = true
+            } catch (e: SecurityException) { /* sin permiso: se ve el mapa sin el punto azul */ }
+            try {
+                map.setMapStyle(MapStyleOptions.loadRawResourceStyle(requireContext(), R.raw.map_dark))
+            } catch (e: Exception) { /* estilo no disponible: mapa normal */ }
+            viewModel.currentPosition.value?.let { moveMap(it) }
+        }
+        viewModel.currentPosition.observe(viewLifecycleOwner) { it?.let(::moveMap) }
+        viewModel.calibratedSinceAppStart.observe(viewLifecycleOwner) { tintCardsOverMap(it) }
+    }
+
+    private fun moveMap(p: DoubleArray) {
+        val map = googleMap ?: return
+        val camera = CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
+        if (!mapCentered) { map.moveCamera(camera); mapCentered = true } else map.animateCamera(camera)
+    }
+
+    /**
+     * Las tarjetas se pintan siempre sobre el mapa. Antes de calibrar son más transparentes
+     * (el mapa protagoniza); ya calibrado, más opacas para leer bien los indicadores.
+     */
+    private fun tintCardsOverMap(calibrated: Boolean) {
+        val surface = ContextCompat.getColor(requireContext(), R.color.surface)
+        val fill = ColorUtils.setAlphaComponent(surface, if (calibrated) CARD_ALPHA_CALIBRATED else CARD_ALPHA_CALIBRATING)
+        listOf(binding.cardLean, binding.cardAccel, binding.cardDistance, binding.cardAltitude).forEach {
+            it?.setCardBackgroundColor(fill)
+        }
+    }
+
     // La altura se mantiene al día con el Dashboard a la vista y sin grabar;
     // grabando la da el servicio, y fuera del Dashboard no se gasta GPS.
     override fun onStart() {
         super.onStart()
+        binding.dashboardMap?.onStart()
         val monitor = altitudeMonitor ?: AltitudeMonitor(requireContext()).also { altitudeMonitor = it }
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
             if (recording) monitor.stop() else monitor.start()
@@ -281,10 +335,29 @@ class DashboardFragment : Fragment() {
 
     override fun onStop() {
         super.onStop()
+        binding.dashboardMap?.onStop()
         altitudeMonitor?.stop()
     }
 
+    override fun onResume() {
+        super.onResume()
+        binding.dashboardMap?.onResume()
+    }
+
+    override fun onPause() {
+        binding.dashboardMap?.onPause()
+        super.onPause()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        _binding?.dashboardMap?.onLowMemory()
+    }
+
     override fun onDestroyView() {
+        binding.dashboardMap?.onDestroy()
+        googleMap = null
+        mapCentered = false
         super.onDestroyView()
         _binding = null
     }
@@ -293,6 +366,11 @@ class DashboardFragment : Fragment() {
 
         // Referencia del vúmetro de distancia mientras no haya ninguna ruta terminada
         const val DEFAULT_DISTANCE_REFERENCE_KM = 50f
+
+        private const val MAP_STATE = "dashboard_map_state"
+        private const val MAP_ZOOM = 16f
+        private const val CARD_ALPHA_CALIBRATING = 0x70   // el mapa se ve más
+        private const val CARD_ALPHA_CALIBRATED = 0xB8     // los indicadores se leen mejor
 
         // Ocho puntos, con O de Oeste
         val CARDINALS = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")

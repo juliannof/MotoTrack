@@ -248,15 +248,28 @@
     <!-- ═══════════════════════════════════════════
          COLUMNA DERECHA — SENSORES + STATS
     ════════════════════════════════════════════ -->
-    <LinearLayout
+    <!-- Columna de la derecha: mapa de la zona de fondo y, encima, las tarjetas de
+         inclinación, aceleración, distancia y altura semitransparentes -->
+    <FrameLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
-        android:orientation="vertical"
         android:layout_marginStart="8dp">
+
+        <com.google.android.gms.maps.MapView
+            android:id="@+id/dashboard_map"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginBottom="14dp"
+        android:orientation="vertical">
 
         <!-- LEAN ANGLE -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_lean"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="0.55"
@@ -324,14 +337,20 @@
         </com.google.android.material.card.MaterialCardView>
 
         <!-- ACELERACIÓN y DISTANCIA en la misma fila -->
-        <LinearLayout
+        <!-- Fila de tarjetas de abajo -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:orientation="horizontal">
 
         <!-- ACELERACIÓN -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_accel"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
@@ -392,6 +411,7 @@
             android:orientation="vertical">
 
             <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_distance"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
@@ -448,6 +468,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_altitude"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
@@ -499,7 +520,9 @@
         </LinearLayout>
 
         </LinearLayout>
+        </FrameLayout>
 
     </LinearLayout>
+    </FrameLayout>
 
 </LinearLayout>
