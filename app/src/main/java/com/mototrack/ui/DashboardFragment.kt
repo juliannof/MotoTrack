@@ -37,6 +37,23 @@ class DashboardFragment : Fragment() {
     }
 
     /** Señal con el límite; si lo superas, la señal, la velocidad y "km/h" se ponen en rojo. */
+    private var lastHeading = Float.NaN
+
+    /**
+     * Punto cardinal y grados del rumbo GPS. El GPS solo da rumbo fiable en movimiento
+     * (más de 3 km/h): parado se conserva el último y se muestra en gris.
+     */
+    private fun updateHeading() {
+        val moving = (viewModel.currentSpeed.value ?: 0f) >= 3f
+        viewModel.currentBearing.value?.let { if (moving) lastHeading = it }
+        val h = lastHeading
+        binding.tvHeading.text = if (h.isNaN()) "—" else CARDINALS[(((h % 360f) + 22.5f) / 45f).toInt() % 8]
+        binding.tvHeadingDeg.text = if (h.isNaN()) "" else String.format("%.0f°", h)
+        val color = ContextCompat.getColor(
+            requireContext(), if (moving && !h.isNaN()) R.color.accent_cyan else R.color.text_secondary)
+        binding.tvHeading.setTextColor(color)
+    }
+
     private fun updateSpeedLimitSign() {
         val limit = viewModel.currentSpeedLimit.value ?: 0
         val exceeded = viewModel.overSpeedLimit.value ?: false
@@ -53,8 +70,12 @@ class DashboardFragment : Fragment() {
 
     private fun setupObservers() {
 
+        // Dirección de la marcha (N/S/E/O)
+        viewModel.currentBearing.observe(viewLifecycleOwner) { updateHeading() }
+
         // Velocidad
         viewModel.currentSpeed.observe(viewLifecycleOwner) { speed ->
+            updateHeading()
             updateAltitudeMeter()
             updateDistanceMeter()
             binding.tvSpeed.text = String.format("%.0f", speed)
@@ -267,5 +288,8 @@ class DashboardFragment : Fragment() {
     private companion object {
         // Por debajo de este desnivel la escala no dice nada: se enciende todo
         const val MIN_ALTITUDE_RANGE_M = 2.0
+
+        // Ocho puntos, con O de Oeste
+        val CARDINALS = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
     }
 }

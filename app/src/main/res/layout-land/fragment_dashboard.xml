@@ -39,7 +39,7 @@
                     android:id="@+id/tv_speed"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:paddingStart="12dp"
+                    android:paddingStart="100dp"
                     android:paddingEnd="12dp"
                     android:paddingTop="60dp"
                     android:paddingBottom="34dp"
@@ -65,7 +65,19 @@
             android:layout_gravity="top|start"
             android:layout_margin="8dp" />
 
-                <!-- km/h y media, abajo a la derecha -->
+                <!-- km/h justo debajo del número (el número queda a la derecha de la señal) -->
+                <TextView
+                    android:id="@+id/tv_speed_unit"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginStart="46dp"
+                    android:layout_marginBottom="8dp"
+                    android:text="km/h"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="16sp" />
+
+                <!-- Media, abajo a la derecha -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -75,17 +87,8 @@
                     android:gravity="center_vertical">
 
                     <TextView
-                        android:id="@+id/tv_speed_unit"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="km/h"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="16sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="16dp"
                         android:text="MED"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp"
@@ -99,6 +102,35 @@
                         android:text="0 km/h"
                         android:textColor="@color/text_secondary"
                         android:textSize="13sp" />
+                </LinearLayout>
+
+                <!-- Dirección de la marcha: punto cardinal (N, NE, E, SE, S, SO, O, NO) y grados -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="30dp"
+                    android:layout_marginEnd="12dp"
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tv_heading"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="30sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tv_heading_deg"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:paddingBottom="4dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
                 </LinearLayout>
 
                 <!-- Velocidad máxima de la ruta, abajo a la izquierda: número grande y en negrita -->
