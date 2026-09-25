@@ -5,19 +5,17 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.min
-import kotlin.math.roundToInt
 
 /**
  * Vúmetro vertical de altura, con los mismos LEDs que el resto y la misma lógica del
  * máximo que el de inclinación:
  *  - El primer LED (abajo) está reservado para "por debajo del nivel del mar" y solo se
  *    enciende, en azul marino, con altura negativa.
- *  - Del segundo al último, la escala va de 0 m a la altura máxima de la ruta: el último
- *    LED es ese máximo y lleva marcado su número de forma persistente.
+ *  - Del segundo al último, la escala va de 0 m a la altura máxima de la ruta (con altura
+ *    positiva, al menos el segundo LED está encendido): el último LED es ese máximo (su valor ya se ve en el número de debajo).
  *
  * Igual que LeanMeterView, dibujamos a mano en un Canvas.
  */
@@ -31,17 +29,11 @@ class AltitudeMeterView @JvmOverloads constructor(
 
     private val density = resources.displayMetrics.density
     private val ledPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 11f * resources.displayMetrics.scaledDensity
-        textAlign = Paint.Align.LEFT
-        typeface = Typeface.DEFAULT_BOLD
-    }
     private val rect = RectF()
 
     private val colorOff = Color.parseColor("#2A2D2F")
     private var colorOn = Color.parseColor("#FF5722")
     private val colorBelowSea = Color.parseColor("#2C56CC")
-    private val colorMax = Color.parseColor("#FF5722")   // el máximo es siempre sobre el nivel del mar
 
     /** Color de los LEDs encendidos sobre el nivel del mar. */
     fun setColor(color: Int) {
@@ -74,16 +66,19 @@ class AltitudeMeterView @JvmOverloads constructor(
         val ledT = (h - gap * (leds - 1)) / leds
         // Como en la aceleración, los LEDs no pasan de ~2,2 veces su grosor
         val ledL = min(ledT * 2.2f, 26 * density)
-        val left = paddingLeft.toFloat()
+        // Pegado al borde derecho de la vista
+        val left = width - paddingRight - ledL
         val radius = ledT * 0.4f
         val bottom = paddingTop + h
 
         // LEDs 1..leds-1: de 0 m a la máxima. El 0 (abajo) es el de "bajo el nivel del mar".
         val scaleLeds = leds - 1
         val below = altitude < 0
+        // Sobre el nivel del mar siempre hay al menos un LED encendido (el primero sobre el mar)
         val litScale = when {
-            below || maxAltitude <= 0.0 -> 0
-            else -> (altitude / maxAltitude * scaleLeds + 0.5).toInt().coerceIn(0, scaleLeds)
+            below || altitude <= 0.0 -> 0
+            maxAltitude <= 0.0 -> 1
+            else -> (altitude / maxAltitude * scaleLeds + 0.5).toInt().coerceIn(1, scaleLeds)
         }
 
         for (i in 0 until leds) {   // i = 0 es el LED de abajo
@@ -105,21 +100,12 @@ class AltitudeMeterView @JvmOverloads constructor(
                 )
                 ledPaint.alpha = 255
             } else {
-                ledPaint.color = colorOff
+                // El LED de "bajo el nivel del mar" apagado se ve en azul tenue, para reconocerlo
+                ledPaint.color = if (i == 0) colorBelowSea else colorOff
+                if (i == 0) ledPaint.alpha = 90
             }
             canvas.drawRoundRect(rect, radius, radius, ledPaint)
-        }
-
-        // Máximo de la ruta, persistente: barrita a la derecha del último LED y su número
-        if (maxAltitude > 0.0) {
-            val top = bottom - leds * ledT - (leds - 1) * gap
-            val barX = left + ledL + 5 * density
-            ledPaint.color = colorMax
-            rect.set(barX, top, barX + 2 * density, top + ledT)
-            canvas.drawRoundRect(rect, density, density, ledPaint)
-            textPaint.color = colorMax
-            val baseline = top + ledT / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
-            canvas.drawText("${maxAltitude.roundToInt()} m", barX + 5 * density, baseline, textPaint)
+            ledPaint.alpha = 255
         }
     }
 }

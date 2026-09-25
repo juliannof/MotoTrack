@@ -339,21 +339,9 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginBottom="26dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="36dp"
             android:orientation="vertical">
-
-            <!-- Botón INICIO/STOP, a la derecha y justo por debajo de la orientación (O 286°) -->
-            <Button
-                android:id="@+id/btn_record"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="72dp"
-                android:layout_marginBottom="8dp"
-                android:backgroundTint="@color/start_green"
-                android:text="▶ INICIAR RUTA"
-                android:textColor="@android:color/white"
-                android:textSize="15sp"
-                android:textStyle="bold" />
 
             <!-- Indicadores sin marco sobre el mapa; cada uno con su vúmetro arriba y el número abajo -->
             <LinearLayout
@@ -367,18 +355,21 @@
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:gravity="center_horizontal"
+                    android:gravity="start"
                     android:orientation="vertical">
 
                     <com.mototrack.ui.AccelMeterView
                         android:id="@+id/accel_meter"
                         android:layout_width="32dp"
                         android:layout_height="0dp"
+                        android:layout_gravity="start"
+                        android:layout_marginStart="5dp"
                         android:layout_weight="1" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
                         android:layout_marginTop="4dp"
                         android:letterSpacing="0.1"
                         android:text="ACELERACIÓN"
@@ -389,6 +380,7 @@
                         android:id="@+id/tv_accel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="5dp"
                         android:text="+0.0"
                         android:textColor="@color/text_primary"
                         android:textSize="26sp"
@@ -399,6 +391,7 @@
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
+                    android:layout_marginTop="110dp"
                     android:layout_weight="1"
                     android:gravity="center_horizontal"
                     android:orientation="vertical">
@@ -452,20 +445,24 @@
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
+                    android:layout_marginTop="8dp"
                     android:layout_weight="1"
-                    android:gravity="center_horizontal"
+                    android:gravity="end"
                     android:orientation="vertical">
 
                     <com.mototrack.ui.AltitudeMeterView
                         android:id="@+id/altitude_meter"
                         android:layout_width="70dp"
                         android:layout_height="0dp"
+                        android:layout_gravity="end"
+                        android:layout_marginEnd="5dp"
                         android:layout_weight="1" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
+                        android:layout_marginEnd="5dp"
                         android:letterSpacing="0.1"
                         android:text="ALTURA"
                         android:textColor="@color/text_secondary"
@@ -475,6 +472,7 @@
                         android:id="@+id/tv_altitude"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginEnd="5dp"
                         android:text="— m"
                         android:textColor="@color/accent_orange"
                         android:textSize="24sp"
@@ -482,6 +480,24 @@
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
+        <!-- Botón INICIO/STOP, abajo a la derecha, en la línea del logo de Google -->
+        <Button
+            android:id="@+id/btn_record"
+            android:layout_width="wrap_content"
+            android:layout_height="28dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="3dp"
+            android:backgroundTint="@color/start_green"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
+            android:minWidth="0dp"
+            android:paddingVertical="0dp"
+            android:text="▶ INICIAR RUTA"
+            android:textColor="@android:color/white"
+            android:textSize="12sp"
+            android:textStyle="bold" />
     </FrameLayout>
 
 </LinearLayout>

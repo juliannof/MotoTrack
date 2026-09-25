@@ -12,6 +12,11 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
+import com.google.android.gms.maps.model.Polyline
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import android.location.Location
+import com.mototrack.utils.HeatTrail
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.mototrack.R
@@ -212,13 +217,13 @@ class DashboardFragment : Fragment() {
 
     /**
      * Vúmetro de altura: el primer LED es "bajo el nivel del mar"; del segundo al último,
-     * de 0 m a la máxima de la ruta (último LED, con su número marcado). Sin ruta en curso
-     * la máxima es la altura actual.
+     * de 0 m a la máxima de la ruta (último LED). Sin lecturas de la ruta no hay máximo con
+     * que comparar, así que los LEDs de la escala quedan apagados.
      */
     private fun updateAltitudeMeter() {
         val alt = viewModel.currentAltitude.value ?: return
         val routeMax = viewModel.maxAltitude.value ?: Double.NaN
-        binding.altitudeMeter.set(alt, if (routeMax.isNaN()) alt else maxOf(routeMax, alt))
+        binding.altitudeMeter.set(alt, if (routeMax.isNaN()) 0.0 else maxOf(routeMax, alt))
     }
 
     /** En horizontal no se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
@@ -318,13 +323,68 @@ class DashboardFragment : Fragment() {
             } catch (e: Exception) { /* estilo no disponible: mapa normal */ }
             viewModel.currentPosition.value?.let { moveMap(it) }
         }
-        viewModel.currentPosition.observe(viewLifecycleOwner) { it?.let(::moveMap) }
+        viewModel.currentPosition.observe(viewLifecycleOwner) {
+            it?.let {
+                moveMap(it)
+                if (viewModel.isRecording.value == true) addTrailPoint(it, viewModel.currentSpeed.value ?: 0f)
+            }
+        }
     }
 
     private fun moveMap(p: DoubleArray) {
         val map = googleMap ?: return
         val camera = CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
         if (!mapCentered) { map.moveCamera(camera); mapCentered = true } else map.animateCamera(camera)
+    }
+
+    // ── Trazado en vivo con mapa de calor ──────────────────────────────────────────
+    // Mientras se graba, la ruta se dibuja sobre el mapa de verde (lento) a rojo (rápido)
+    // respecto a la velocidad máxima de la ruta (mínimo 5 km/h, para que a pie también se vea).
+
+    private val trailPoints = mutableListOf<LatLng>()
+    private val trailSpeeds = mutableListOf<Float>()
+    private var trailLines: List<Polyline> = emptyList()
+    private var trailRedrawPending = false
+
+    private fun addTrailPoint(p: DoubleArray, kmh: Float) {
+        val pos = LatLng(p[0], p[1])
+        trailPoints.lastOrNull()?.let { last ->
+            val d = FloatArray(1)
+            Location.distanceBetween(last.latitude, last.longitude, pos.latitude, pos.longitude, d)
+            if (d[0] < TRAIL_MIN_STEP_M) return
+        }
+        trailPoints.add(pos)
+        trailSpeeds.add(kmh)
+        if (!trailRedrawPending) {
+            trailRedrawPending = true
+            _binding?.root?.postDelayed({ trailRedrawPending = false; drawTrail() }, TRAIL_REDRAW_MS)
+        }
+    }
+
+    private fun drawTrail() {
+        val map = googleMap ?: return
+        trailLines.forEach { it.remove() }
+        trailLines = if (trailPoints.size < 2) emptyList()
+        else HeatTrail.draw(map, trailPoints, trailSpeeds, maxOf(trailSpeeds.max(), 5f))
+    }
+
+    private fun clearTrail() {
+        trailLines.forEach { it.remove() }
+        trailLines = emptyList()
+        trailPoints.clear()
+        trailSpeeds.clear()
+    }
+
+    /** Al volver al Dashboard con una ruta en curso, recupera de la base de datos lo ya recorrido. */
+    private fun restoreTrail() {
+        val routeId = viewModel.currentRouteId.value ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val saved = viewModel.routePoints(routeId)
+            if (trailPoints.size > 1) return@launch
+            trailPoints.clear(); trailSpeeds.clear()
+            saved.filter { it.latitude != 0.0 || it.longitude != 0.0 }
+                .forEach { addTrailPoint(doubleArrayOf(it.latitude, it.longitude), it.speedKmh) }
+        }
     }
 
     // ── Inicio automático de la ruta ───────────────────────────────────────────────
@@ -375,6 +435,7 @@ class DashboardFragment : Fragment() {
         monitor.onSpeed = ::onIdleSpeed
         monitor.onMotion = ::onMotionDetected
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
+            if (recording) restoreTrail() else clearTrail()
             if (recording) monitor.stop() else {
                 // Ruta detenida: pausa antes de poder volver a arrancar sola
                 autoStartBlockedUntilMs = SystemClock.elapsedRealtime() + AUTO_START_COOLDOWN_MS
@@ -407,6 +468,7 @@ class DashboardFragment : Fragment() {
     override fun onDestroyView() {
         binding.dashboardMap?.onDestroy()
         googleMap = null
+        trailLines = emptyList()
         mapCentered = false
         super.onDestroyView()
         _binding = null
@@ -419,6 +481,8 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val MAP_ZOOM = 16f
+        private const val TRAIL_MIN_STEP_M = 4f
+        private const val TRAIL_REDRAW_MS = 1_000L
         private const val AUTO_REARM_KMH = 2f
         private const val AUTO_START_COOLDOWN_MS = 60_000L
         private const val AUTO_START_POPUP_MS = 4_000L

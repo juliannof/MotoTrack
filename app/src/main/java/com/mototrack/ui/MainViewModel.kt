@@ -47,6 +47,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentAltitude = TrackingService.currentAltitude
     val maxAltitude = TrackingService.maxAltitude
     val minAltitude = TrackingService.minAltitude
+    val currentRouteId = TrackingService.currentRouteId
     val pointCount    = TrackingService.pointCount
     val maxSpeed      = TrackingService.maxSpeed
     val maxLean       = TrackingService.maxLean
@@ -81,6 +82,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun getPointsForRoute(routeId: Long) = viewModelScope.run {
         repo.getPointsLive(routeId)
     }
+
+    suspend fun routePoints(routeId: Long) = repo.getPointsForRoute(routeId)
 
     suspend fun exportRouteAsGpx(routeId: Long): String? {
         val route = repo.getRouteById(routeId) ?: return null

@@ -29,6 +29,8 @@ import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
+import com.mototrack.utils.CurveCounter
+import com.mototrack.utils.HeatTrail
 import com.mototrack.R
 import com.mototrack.data.RoutePoint
 import com.mototrack.service.SensorLogger
@@ -202,6 +204,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
 
         viewModel.getPointsForRoute(args.routeId).observe(viewLifecycleOwner) { points ->
             routePoints = points
+            val curves = CurveCounter.count(points)
+            binding.tvCurves.text = String.format("%d (I %d · D %d)", curves.total, curves.left, curves.right)
 
             // Gráficas
             if (points.isNotEmpty()) setupCharts(points)
@@ -211,44 +215,14 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    /**
-     * Mapa de calor de la velocidad: el trazado cambia de verde (lento) a rojo
-     * (rápido) respecto a la velocidad máxima de la ruta. Los tramos contiguos del
-     * mismo tono se agrupan en una sola línea para no crear miles de polilíneas.
-     */
+    /** Mapa de calor de la velocidad respecto a la velocidad máxima de la ruta. */
     private fun drawHeatLine(map: GoogleMap, points: List<RoutePoint>) {
         val valid = points.filter { it.latitude != 0.0 || it.longitude != 0.0 }
         val maxSpeed = valid.maxOfOrNull { it.speedKmh }?.takeIf { it > 1f } ?: 1f
         binding.heatLegend.visibility = View.VISIBLE
         binding.tvHeatMax.text = String.format("%.0f km/h", maxSpeed)
-
-        var run = mutableListOf<LatLng>()
-        var runShade = -1
-        fun flush() {
-            if (run.size >= 2) {
-                map.addPolyline(
-                    PolylineOptions().addAll(run).width(10f).geodesic(true)
-                        .color(heatColor(runShade / (HEAT_SHADES - 1f)))
-                )
-            }
-        }
-        for (i in 1 until valid.size) {
-            // Cada tramo toma el tono de la velocidad media de sus dos extremos
-            val v = (valid[i - 1].speedKmh + valid[i].speedKmh) / 2f
-            val shade = ((v / maxSpeed).coerceIn(0f, 1f) * (HEAT_SHADES - 1)).toInt()
-            if (shade != runShade) {
-                flush()
-                // El nuevo tramo arranca en el último punto: sin huecos entre colores
-                run = mutableListOf(LatLng(valid[i - 1].latitude, valid[i - 1].longitude))
-                runShade = shade
-            }
-            run.add(LatLng(valid[i].latitude, valid[i].longitude))
-        }
-        flush()
+        HeatTrail.draw(map, valid.map { LatLng(it.latitude, it.longitude) }, valid.map { it.speedKmh }, maxSpeed)
     }
-
-    /** 0 = verde, 0.5 = amarillo, 1 = rojo. */
-    private fun heatColor(t: Float) = Color.HSVToColor(floatArrayOf(120f * (1f - t), 0.9f, 1f))
 
     private fun setupCharts(points: List<RoutePoint>) {
         val t0 = points.first().timestamp
@@ -439,6 +413,5 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         private const val DEFAULT_ZOOM = 5f
         private const val SINGLE_POINT_ZOOM = 16f
         private const val MAP_PADDING_PX = 80
-        private const val HEAT_SHADES = 16
     }
 }
