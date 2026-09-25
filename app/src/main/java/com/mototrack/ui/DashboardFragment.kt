@@ -6,7 +6,6 @@ import android.os.Bundle
 import android.view.*
 import android.widget.EditText
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.ColorUtils
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.LatLng
@@ -39,6 +38,10 @@ class DashboardFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(requireActivity())[MainViewModel::class.java]
 
+        // En horizontal el vúmetro de inclinación ocupa 48 dp: sin escala numérica
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            binding.leanMeter.showScale = false
+        }
         setupMap(savedInstanceState)
         setupObservers()
         setupButtons()
@@ -71,6 +74,8 @@ class DashboardFragment : Fragment() {
     private fun updateSpeedLimitSign() {
         val limit = viewModel.currentSpeedLimit.value ?: 0
         val exceeded = viewModel.overSpeedLimit.value ?: false
+        // Al arrancar, sin lectura de la vía, la señal no se muestra (nada de un "—" gris)
+        binding.speedLimitSign.visibility = if (limit > 0) View.VISIBLE else View.GONE
         binding.speedLimitSign.setEstimated(viewModel.speedLimitEstimated.value ?: false)
         binding.speedLimitSign.setLimit(limit)
         binding.speedLimitSign.setExceeded(exceeded)
@@ -278,8 +283,7 @@ class DashboardFragment : Fragment() {
     }
 
     // ── Mapa de la zona (de fondo de las tarjetas de abajo a la derecha) ─────────────
-    // El mapa queda siempre debajo y las tarjetas semitransparentes por encima, con los
-    // indicadores a la vista.
+    // El mapa queda siempre de fondo de la columna derecha; los indicadores van encima sin marco.
 
     private fun setupMap(savedInstanceState: Bundle?) {
         val mapView = binding.dashboardMap ?: return
@@ -301,25 +305,12 @@ class DashboardFragment : Fragment() {
             viewModel.currentPosition.value?.let { moveMap(it) }
         }
         viewModel.currentPosition.observe(viewLifecycleOwner) { it?.let(::moveMap) }
-        viewModel.calibratedSinceAppStart.observe(viewLifecycleOwner) { tintCardsOverMap(it) }
     }
 
     private fun moveMap(p: DoubleArray) {
         val map = googleMap ?: return
         val camera = CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
         if (!mapCentered) { map.moveCamera(camera); mapCentered = true } else map.animateCamera(camera)
-    }
-
-    /**
-     * Las tarjetas se pintan siempre sobre el mapa. Antes de calibrar son más transparentes
-     * (el mapa protagoniza); ya calibrado, más opacas para leer bien los indicadores.
-     */
-    private fun tintCardsOverMap(calibrated: Boolean) {
-        val surface = ContextCompat.getColor(requireContext(), R.color.surface)
-        val fill = ColorUtils.setAlphaComponent(surface, if (calibrated) CARD_ALPHA_CALIBRATED else CARD_ALPHA_CALIBRATING)
-        listOf(binding.cardLean, binding.cardAccel, binding.cardDistance, binding.cardAltitude).forEach {
-            it?.setCardBackgroundColor(fill)
-        }
     }
 
     // La altura se mantiene al día con el Dashboard a la vista y sin grabar;
@@ -369,8 +360,6 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val MAP_ZOOM = 16f
-        private const val CARD_ALPHA_CALIBRATING = 0x70   // el mapa se ve más
-        private const val CARD_ALPHA_CALIBRATED = 0xB8     // los indicadores se leen mejor
 
         // Ocho puntos, con O de Oeste
         val CARDINALS = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")

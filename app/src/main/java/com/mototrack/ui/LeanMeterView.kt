@@ -67,6 +67,9 @@ class LeanMeterView @JvmOverloads constructor(
     private val colorOrange = Color.parseColor("#FF5722")
     private val colorRed = Color.parseColor("#F44336")
 
+    /** Escala numérica bajo los LEDs (50 · 25 · 0 · 25 · 50); se apaga en la versión compacta. */
+    var showScale = true
+
     fun setLean(degrees: Float) {
         lean = degrees
         invalidate()
@@ -106,7 +109,7 @@ class LeanMeterView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val labelH = labelPaint.textSize + 6 * density
+        val labelH = if (showScale) labelPaint.textSize + 6 * density else 0f
         // Encima de los LEDs: el número del máximo y su marca
         val peakH = peakTextPaint.textSize + 8 * density
         val w = width - paddingLeft - paddingRight
@@ -190,15 +193,17 @@ class LeanMeterView @JvmOverloads constructor(
         }
         canvas.drawRoundRect(rect, barHalf, barHalf, ledPaint)
 
-        // Escala bajo los LEDs: 50 · 25 · 0 · 25 · 50 (el 0 se ilumina al ir recto)
-        val labelY = top + ledH + labelH - 2 * density
-        zeroPaint.color = if (straight) colorGreen else labelPaint.color
-        canvas.drawText("0", cx, labelY, zeroPaint)
-        for (deg in intArrayOf(25, 50)) {
-            val i = (deg / step).toInt() - 1
-            val offset = centerGap / 2 + i * (ledW + gap) + ledW / 2
-            canvas.drawText("$deg", cx - offset, labelY, labelPaint)
-            canvas.drawText("$deg", cx + offset, labelY, labelPaint)
+        if (showScale) {
+            // Escala bajo los LEDs: 50 · 25 · 0 · 25 · 50 (el 0 se ilumina al ir recto)
+            val labelY = top + ledH + labelH - 2 * density
+            zeroPaint.color = if (straight) colorGreen else labelPaint.color
+            canvas.drawText("0", cx, labelY, zeroPaint)
+            for (deg in intArrayOf(25, 50)) {
+                val i = (deg / step).toInt() - 1
+                val offset = centerGap / 2 + i * (ledW + gap) + ledW / 2
+                canvas.drawText("$deg", cx - offset, labelY, labelPaint)
+                canvas.drawText("$deg", cx + offset, labelY, labelPaint)
+            }
         }
     }
 }
