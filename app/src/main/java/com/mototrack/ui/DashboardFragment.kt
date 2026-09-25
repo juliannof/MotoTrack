@@ -136,22 +136,28 @@ class DashboardFragment : Fragment() {
     private fun showCalibration(status: CalibrationStatus) {
         val label = binding.tvLeanLabel
         val (text, colorRes) = when (status) {
-            CalibrationStatus.MEASURING -> "INCLINACIÓN · CALIBRANDO… NO INCLINES" to R.color.accent_orange
-            CalibrationStatus.WAITING -> "INCLINACIÓN · SIN CALIBRAR" to R.color.text_secondary
-            CalibrationStatus.DONE -> "INCLINACIÓN · CALIBRADO ✓" to R.color.accent_green
+            CalibrationStatus.WAITING -> "CALIBRAR: PARA Y MANILLAR IZQ." to R.color.accent_orange
+            CalibrationStatus.MEASURING -> "CALIBRANDO… NO TE MUEVAS" to R.color.accent_orange
+            CalibrationStatus.DONE -> "CALIBRADO ✓" to R.color.accent_green
+            CalibrationStatus.EXPIRED -> "SIN CALIBRAR (OFFSET ANTERIOR)" to R.color.text_secondary
             CalibrationStatus.OFF -> "INCLINACIÓN" to R.color.text_secondary
         }
         label.text = text
         label.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
-        // El "calibrado" se muestra unos segundos y vuelve a la etiqueta normal
-        if (status == CalibrationStatus.DONE) {
+        // Mientras se calibra el aviso ocupa toda la fila; el máximo vuelve después
+        val calibrating = status == CalibrationStatus.WAITING || status == CalibrationStatus.MEASURING
+        binding.tvMaxLean.visibility = if (calibrating) View.GONE else View.VISIBLE
+        binding.tvMaxLeanTitle.visibility = if (calibrating) View.GONE else View.VISIBLE
+
+        // "Calibrado" y "sin calibrar" se muestran unos segundos y vuelven a la etiqueta normal
+        if (status == CalibrationStatus.DONE || status == CalibrationStatus.EXPIRED) {
             label.postDelayed({
-                if (_binding != null && viewModel.calibrationStatus.value == CalibrationStatus.DONE) {
+                if (_binding != null && viewModel.calibrationStatus.value == status) {
                     binding.tvLeanLabel.text = "INCLINACIÓN"
                     binding.tvLeanLabel.setTextColor(
                         ContextCompat.getColor(requireContext(), R.color.text_secondary))
                 }
-            }, 3000)
+            }, 4000)
         }
     }
 
