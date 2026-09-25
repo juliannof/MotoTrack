@@ -7,13 +7,13 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
-import kotlin.math.ceil
 import kotlin.math.min
 
 /**
- * Vúmetro de altura: una fila de LEDs iguales a los de la inclinación. El último LED
- * es la altura máxima alcanzada en la ruta, el primero la mínima, y la altura
- * actual enciende los LEDs hasta su proporción. Con la moto parada se encienden todos.
+ * Vúmetro vertical de altura: LEDs iguales a los de la aceleración y la inclinación,
+ * apilados de abajo arriba. El primero es la altura mínima de la ruta, el último la
+ * máxima, y la altura actual enciende los LEDs hasta su proporción. Con la moto
+ * parada se encienden todos.
  *
  * Igual que LeanMeterView, dibujamos a mano en un Canvas.
  */
@@ -22,7 +22,7 @@ class AltitudeMeterView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    // 0..1: parte de la altura máxima que representa la altura actual
+    // 0..1: posición de la altura actual entre la mínima y la máxima de la ruta
     private var fraction = 1f
 
     private val density = resources.displayMetrics.density
@@ -36,7 +36,7 @@ class AltitudeMeterView @JvmOverloads constructor(
     private val colorOff = Color.parseColor("#2A2D2F")
     private var colorOn = Color.parseColor("#FF5722")
 
-    /** Color de los LEDs encendidos (naranja normal, azul bajo el nivel del mar). */
+    /** Color de los LEDs encendidos (naranja normal, azul marino bajo el nivel del mar). */
     fun setColor(color: Int) {
         if (color == colorOn) return
         colorOn = color
@@ -52,8 +52,8 @@ class AltitudeMeterView @JvmOverloads constructor(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(
-            getDefaultSize(suggestedMinimumWidth, widthMeasureSpec),
-            resolveSize((16 * density).toInt(), heightMeasureSpec)
+            resolveSize((32 * density).toInt(), widthMeasureSpec),
+            resolveSize((110 * density).toInt(), heightMeasureSpec)
         )
     }
 
@@ -63,22 +63,22 @@ class AltitudeMeterView @JvmOverloads constructor(
         val w = (width - paddingLeft - paddingRight).toFloat()
         val h = (height - paddingTop - paddingBottom).toFloat()
         val gap = 3 * density
-        // Nº de LEDs según el ancho disponible: ~12 dp por LED (más ancho, más LEDs)
-        val leds = ((w + gap) / (12 * density)).toInt().coerceIn(8, 40)
-        val ledW = (w - gap * (leds - 1)) / leds
-        // Como en la inclinación, los LEDs no pasan de ~2,2 veces su ancho
-        val ledH = min(h, ledW * 2.2f)
-        val top = paddingTop + (h - ledH) / 2f
-        val radius = ledW * 0.4f
+        // Nº de LEDs según el alto disponible: ~12 dp por LED
+        val leds = ((h + gap) / (12 * density)).toInt().coerceIn(4, 30)
+        val ledT = (h - gap * (leds - 1)) / leds
+        // Como en la aceleración, los LEDs no pasan de ~2,2 veces su grosor
+        val ledL = min(w, ledT * 2.2f)
+        val left = paddingLeft + (w - ledL) / 2f
+        val radius = ledT * 0.4f
+        val bottom = paddingTop + h
 
         // El primer LED es la altura mínima (siempre encendido) y el último la máxima
         val litCount = (1 + fraction * (leds - 1) + 0.5f).toInt().coerceIn(1, leds)
 
-        for (i in 0 until leds) {
-            val left = paddingLeft + i * (ledW + gap)
-            rect.set(left, top, left + ledW, top + ledH)
-            val lit = i < litCount
-            if (lit) {
+        for (i in 0 until leds) {   // i = 0 es el LED de abajo
+            val top = bottom - (i + 1) * ledT - i * gap
+            rect.set(left, top, left + ledL, top + ledT)
+            if (i < litCount) {
                 // Halo suave detrás del LED encendido
                 ledPaint.color = colorOn
                 ledPaint.alpha = 60
@@ -96,8 +96,8 @@ class AltitudeMeterView @JvmOverloads constructor(
 
         // El último LED es la altura máxima: si no se ha llegado a ella, va contorneado
         if (litCount < leds) {
-            val left = paddingLeft + (leds - 1) * (ledW + gap)
-            rect.set(left, top, left + ledW, top + ledH)
+            val top = bottom - leds * ledT - (leds - 1) * gap
+            rect.set(left, top, left + ledL, top + ledT)
             peakPaint.color = colorOn
             canvas.drawRoundRect(rect, radius, radius, peakPaint)
         }
