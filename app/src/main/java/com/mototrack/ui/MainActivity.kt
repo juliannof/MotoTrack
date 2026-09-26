@@ -80,6 +80,8 @@ class MainActivity : AppCompatActivity() {
         appBarConfig = AppBarConfiguration(
             setOf(R.id.nav_dashboard, R.id.nav_history), binding.drawerLayout
         )
+        setSupportActionBar(binding.toolbar)
+        supportActionBar?.setDisplayShowTitleEnabled(false)   // el título va centrado en toolbar_title
         setupActionBarWithNavController(navController, appBarConfig)
 
         binding.navView.setNavigationItemSelectedListener { item ->
@@ -101,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         // orientación aquí.
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         navController.addOnDestinationChangedListener { _, destination, _ ->
+            binding.toolbarTitle.text = destination.label
             if (destination.id == R.id.nav_login ||
                 (landscape && destination.id == R.id.nav_dashboard)) supportActionBar?.hide()
             else supportActionBar?.show()
@@ -132,17 +135,21 @@ class MainActivity : AppCompatActivity() {
     private fun updateDrawerHeader() {
         val header = binding.navView.getHeaderView(0)
         val avatar = header.findViewById<ImageView>(R.id.iv_avatar)
+        val photo = auth.photoUrl()
+        for (view in listOf(avatar, binding.toolbarAvatar)) showAvatar(view, photo)
         header.findViewById<TextView>(R.id.tv_user_name).text = auth.displayName() ?: ""
         header.findViewById<TextView>(R.id.tv_user_email).text = auth.currentUser() ?: ""
-        val photo = auth.photoUrl()
+    }
+
+    private fun showAvatar(view: ImageView, photo: String?) {
         if (photo != null) {
-            avatar.load(photo) {
+            view.load(photo) {
                 transformations(CircleCropTransformation())
                 placeholder(R.drawable.ic_person)
                 error(R.drawable.ic_person)
             }
         } else {
-            avatar.setImageResource(R.drawable.ic_person)
+            view.setImageResource(R.drawable.ic_person)
         }
     }
 

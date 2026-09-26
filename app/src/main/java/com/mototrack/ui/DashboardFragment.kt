@@ -1,6 +1,5 @@
 package com.mototrack.ui
 
-import android.app.AlertDialog
 import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
@@ -16,11 +15,13 @@ import com.google.android.gms.maps.model.Polyline
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import android.location.Location
+import com.mototrack.utils.Daylight
 import com.mototrack.utils.HeatTrail
 import com.mototrack.utils.RainForecast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.ViewModelProvider
 import com.mototrack.R
 import com.mototrack.databinding.FragmentDashboardBinding
@@ -283,7 +284,7 @@ class DashboardFragment : Fragment() {
             setText(defaultName)
         }
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle("Nueva Ruta")
             .setMessage("Nombre de la ruta:")
             .setView(input)
@@ -295,12 +296,15 @@ class DashboardFragment : Fragment() {
             .show()
     }
 
+    /**
+     * Al detener: solo lo instantáneo vuelve a cero (la moto está parada). Distancia, altura,
+     * máximos, medias y trazado se quedan a la vista como resumen de la ruta hasta que empiece otra
+     * (el servicio los reinicia al arrancar).
+     */
     private fun resetUI() {
         binding.tvSpeed.text = "0"
         binding.tvAccel.text = "+0.0"
         binding.accelMeter.reset()
-        binding.tvDistance.text = "0.00 km"
-        binding.tvAltitude.text = "— m"
         binding.leanMeter.reset()
     }
 
@@ -321,24 +325,52 @@ class DashboardFragment : Fragment() {
             try {
                 map.isMyLocationEnabled = true
             } catch (e: SecurityException) { /* sin permiso: se ve el mapa sin el punto azul */ }
-            try {
-                map.setMapStyle(MapStyleOptions.loadRawResourceStyle(requireContext(), R.raw.map_dark))
-            } catch (e: Exception) { /* estilo no disponible: mapa normal */ }
-            viewModel.currentPosition.value?.let { moveMap(it) }
+            drawTrail()   // trazado ya recorrido (tras un giro de pantalla o con la ruta parada)
+            viewModel.currentPosition.value?.let {
+                if (it.getOrElse(2) { Double.MAX_VALUE } <= MAP_MAX_ACCURACY_M) moveMap(it)
+            }
         }
         viewModel.currentPosition.observe(viewLifecycleOwner) {
             it?.let {
-                moveMap(it)
+                // Hasta el primer fix preciso el mapa ni se mueve ni se muestra
+                if (mapCentered || it.getOrElse(2) { Double.MAX_VALUE } <= MAP_MAX_ACCURACY_M) moveMap(it)
                 if (viewModel.isRecording.value == true) addTrailPoint(it, viewModel.currentSpeed.value ?: 0f)
                 refreshRain(it)
             }
         }
     }
 
+    // Estilo del mapa según la luz: normal de Google de día, oscuro de noche (null = aún sin fijar)
+    private var mapNight: Boolean? = null
+
+    private fun applyMapStyle(map: GoogleMap, p: DoubleArray) {
+        val night = Daylight.isNight(p[0], p[1])
+        if (night == mapNight) return
+        mapNight = night
+        try {
+            map.setMapStyle(
+                if (night) MapStyleOptions.loadRawResourceStyle(requireContext(), R.raw.map_dark) else null
+            )
+        } catch (e: Exception) { /* estilo no disponible: mapa normal */ }
+    }
+
     private fun moveMap(p: DoubleArray) {
         val map = googleMap ?: return
+        applyMapStyle(map, p)
         val camera = CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
-        if (!mapCentered) { map.moveCamera(camera); mapCentered = true } else map.animateCamera(camera)
+        if (!mapCentered) {
+            map.moveCamera(camera); mapCentered = true
+            revealMap()
+        } else map.animateCamera(camera)
+    }
+
+    /** Quita la cortina con un fundido, dando un momento a que se pinten los tiles de la zona. */
+    private fun revealMap() {
+        val cover = _binding?.mapCover ?: return
+        cover.postDelayed({
+            _binding?.mapCover?.animate()?.alpha(0f)?.setDuration(MAP_REVEAL_FADE_MS)
+                ?.withEndAction { _binding?.mapCover?.visibility = View.GONE }?.start()
+        }, MAP_REVEAL_DELAY_MS)
     }
 
     // ── ¿Va a llover? ──────────────────────────────────────────────────────────────
@@ -384,8 +416,8 @@ class DashboardFragment : Fragment() {
     // Mientras se graba, la ruta se dibuja sobre el mapa de verde (lento) a rojo (rápido)
     // respecto a la velocidad máxima de la ruta (mínimo 5 km/h, para que a pie también se vea).
 
-    private val trailPoints = mutableListOf<LatLng>()
-    private val trailSpeeds = mutableListOf<Float>()
+    private val trailPoints get() = viewModel.trailPoints
+    private val trailSpeeds get() = viewModel.trailSpeeds
     private var trailLines: List<Polyline> = emptyList()
     private var trailRedrawPending = false
 
@@ -478,7 +510,16 @@ class DashboardFragment : Fragment() {
         monitor.onSpeed = ::onIdleSpeed
         monitor.onMotion = ::onMotionDetected
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
-            if (recording) restoreTrail() else clearTrail()
+            // El trazado de la ruta terminada se queda en el mapa hasta que empieza otra
+            if (recording) {
+                val routeId = viewModel.currentRouteId.value
+                if (viewModel.trailRouteId != routeId) {
+                    // Ruta nueva: fuera el trazado anterior. Si es la misma (giro de pantalla), se conserva
+                    clearTrail()
+                    viewModel.trailRouteId = routeId
+                    restoreTrail()
+                } else drawTrail()
+            }
             if (recording) monitor.stop() else {
                 // Ruta detenida: pausa antes de poder volver a arrancar sola
                 autoStartBlockedUntilMs = SystemClock.elapsedRealtime() + AUTO_START_COOLDOWN_MS
@@ -513,6 +554,7 @@ class DashboardFragment : Fragment() {
         googleMap = null
         trailLines = emptyList()
         mapCentered = false
+        mapNight = null
         super.onDestroyView()
         _binding = null
     }
@@ -524,6 +566,10 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val MAP_ZOOM = 16f
+        // Fix más preciso que esto = GPS de verdad (no una posición por red de cientos de metros)
+        private const val MAP_MAX_ACCURACY_M = 25.0
+        private const val MAP_REVEAL_DELAY_MS = 800L
+        private const val MAP_REVEAL_FADE_MS = 400L
         private const val RAIN_REFRESH_MS = 15 * 60_000L
         private const val TRAIL_MIN_STEP_M = 4f
         private const val TRAIL_REDRAW_MS = 1_000L
