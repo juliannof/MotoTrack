@@ -111,8 +111,10 @@ class AltitudeMonitor(context: Context) {
                     onSpeed?.invoke(kmh)
                     if (kmh >= GPS_MOTION_KMH) motion("GPS")
                 }
-                TrackingService.currentPosition.postValue(doubleArrayOf(loc.latitude, loc.longitude))
-                msl.ofOrNull(loc)?.let { TrackingService.currentAltitude.postValue(it) }
+                TrackingService.currentPosition.postValue(doubleArrayOf(loc.latitude, loc.longitude, loc.accuracy.toDouble()))
+                // Sin picos: se ignora un fix con mala precisión vertical
+                val poorVertical = loc.hasVerticalAccuracy() && loc.verticalAccuracyMeters > 12f
+                if (!poorVertical) msl.ofOrNull(loc)?.let { TrackingService.currentAltitude.postValue(it) }
             }
         }
     }

@@ -101,6 +101,15 @@ class TrackingService : Service(), SensorEventListener {
         private const val STALE_FIX_LOST_S = 8.0
         // Por debajo de esto es ruido y vibración del móvil, no aceleración de marcha
         private const val ACCEL_DEADBAND = 0.4f
+        // Por debajo de esta velocidad GPS (a pie, parado) "adelante" no está definido: el
+        // móvil va en la mano o el bolsillo y el balanceo no es aceleración de marcha
+        private const val ACCEL_MIN_GPS_SPEED_KMH = 8f
+
+        // Altura: se descarta un fix con precisión vertical peor que esto, y el resto se
+        // suaviza limitando cuánto puede moverse por fix (a 1 Hz, ~5 m/s ya es mucho)
+        private const val ALT_MAX_VERTICAL_ACCURACY_M = 12f
+        private const val ALT_MAX_STEP_M = 5.0
+        private const val ALT_SMOOTHING = 0.3
 
         // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
         private const val LIMIT_QUERY_MIN_DISTANCE_M = 30f
@@ -136,7 +145,7 @@ class TrackingService : Service(), SensorEventListener {
         val currentBearing  = MutableLiveData(0f)        // grados
         val compassHeading  = MutableLiveData<Float?>(null)   // rumbo por la brújula del móvil, sin GPS
         val currentPlace    = MutableLiveData<String?>(null)  // urbanización o calle donde está la moto
-        val currentPosition = MutableLiveData<DoubleArray?>(null) // [lat, lon] de la última posición
+        val currentPosition = MutableLiveData<DoubleArray?>(null) // [lat, lon, precisión en m] de la última posición
         // true en cuanto se calibra una vez desde que se abrió la app (el mapa del Dashboard se oculta)
         val calibratedSinceAppStart = MutableLiveData(false)
         val currentAltitude = MutableLiveData(0.0)       // metros
@@ -233,6 +242,17 @@ class TrackingService : Service(), SensorEventListener {
     private var stillSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
+    // Altura filtrada (NaN hasta el primer fix de la ruta)
+    private var altFiltered = Double.NaN
+    // Satélites usados en el fix, del GnssStatus (Location.extras no lo trae de forma fiable)
+    @Volatile private var satellitesUsed = 0
+    private val gnssCallback = object : GnssStatus.Callback() {
+        override fun onSatelliteStatusChanged(status: GnssStatus) {
+            var used = 0
+            for (i in 0 until status.satelliteCount) if (status.usedInFix(i)) used++
+            satellitesUsed = used
+        }
+    }
 
     private val msl by lazy { MslAltitude(this) }
 
@@ -304,6 +324,7 @@ class TrackingService : Service(), SensorEventListener {
         smoothedAccel = 0f
         maxAltitude.postValue(Double.NaN)
         minAltitude.postValue(Double.NaN)
+        altFiltered = Double.NaN
         calibratedThisRide = false
         straightSinceMs = 0L
         straightLeanRef = Float.NaN
@@ -426,8 +447,9 @@ class TrackingService : Service(), SensorEventListener {
                 .setMinUpdateDistanceMeters(1f)                                          // mínimo 1 metro
                 .build()
             fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-            (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
-                .addNmeaListener(msl.nmeaListener, Handler(Looper.getMainLooper()))
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            lm.addNmeaListener(msl.nmeaListener, Handler(Looper.getMainLooper()))
+            lm.registerGnssStatusCallback(gnssCallback, Handler(Looper.getMainLooper()))
         } catch (e: SecurityException) {
             Log.e(TAG, "GPS permission denied: ${e.message}")
         }
@@ -435,7 +457,9 @@ class TrackingService : Service(), SensorEventListener {
 
     private fun unregisterGps() {
         fusedClient.removeLocationUpdates(locationCallback)
-        (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeNmeaListener(msl.nmeaListener)
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        lm.removeNmeaListener(msl.nmeaListener)
+        lm.unregisterGnssStatusCallback(gnssCallback)
     }
 
     private fun onLocationChanged(location: Location) {
@@ -470,7 +494,7 @@ class TrackingService : Service(), SensorEventListener {
         } else false
         prevBearing = if (location.hasBearing()) location.bearing else Float.NaN
         lastGpsBearing = location.bearing
-        lastGpsAlt     = msl.of(location)
+        lastGpsAlt     = filterAltitude(location)
         lastLocation   = location
 
         speedSumKmh += lastGpsSpeed
@@ -480,7 +504,7 @@ class TrackingService : Service(), SensorEventListener {
         currentSpeed.postValue(lastGpsSpeed)
         updateOverLimit()
         currentBearing.postValue(lastGpsBearing)
-        currentPosition.postValue(doubleArrayOf(location.latitude, location.longitude))
+        currentPosition.postValue(doubleArrayOf(location.latitude, location.longitude, location.accuracy.toDouble()))
         if (sourceOf(location) == "gps") PlaceTracker.update(this, location.latitude, location.longitude)
         currentAltitude.postValue(lastGpsAlt)
         val hi = maxAltitude.value ?: Double.NaN
@@ -503,6 +527,25 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
+     * Altura sin los picos del GPS: un fix con mala precisión vertical se ignora (se
+     * mantiene la última buena) y los demás mueven la altura como mucho [ALT_MAX_STEP_M]
+     * por fix, suavizados. El primer fix de la ruta fija el valor de partida.
+     */
+    private fun filterAltitude(location: Location): Double {
+        val raw = msl.of(location)
+        if (altFiltered.isNaN()) {
+            altFiltered = raw
+            return raw
+        }
+        val poorVertical = location.hasVerticalAccuracy() &&
+            location.verticalAccuracyMeters > ALT_MAX_VERTICAL_ACCURACY_M
+        if (poorVertical) return altFiltered
+        val step = (raw - altFiltered).coerceIn(-ALT_MAX_STEP_M, ALT_MAX_STEP_M)
+        altFiltered += ALT_SMOOTHING * step
+        return altFiltered
+    }
+
+    /**
      * Aceleración en el sentido de la marcha (+ acelerando, - frenando).
      *
      * Con el móvil en el manillar y la pantalla mirando al piloto (la misma
@@ -521,7 +564,8 @@ class TrackingService : Service(), SensorEventListener {
 
         // Móvil tumbado (pantalla hacia arriba): no hay "adelante" definido
         var lateral = 0f
-        val forward = if (horiz < MIN_SCREEN_VERTICALITY) 0f else {
+        // A pie o parado sin movimiento GPS tampoco: el balanceo del móvil no es marcha
+        val forward = if (horiz < MIN_SCREEN_VERTICALITY || lastGpsSpeed < ACCEL_MIN_GPS_SPEED_KMH) 0f else {
             val fx = -zx / horiz
             val fy = -zy / horiz
             val east  = rotMatrix[0] * a[0] + rotMatrix[1] * a[1] + rotMatrix[2] * a[2]
@@ -918,7 +962,7 @@ class TrackingService : Service(), SensorEventListener {
                 timestamp     = System.currentTimeMillis(),
                 latitude      = location.latitude,
                 longitude     = location.longitude,
-                altitude      = msl.of(location),
+                altitude      = lastGpsAlt,
                 accuracy      = location.accuracy,
                 speedKmh      = lastGpsSpeed,
                 accelX        = linearAcc[0],
@@ -930,7 +974,7 @@ class TrackingService : Service(), SensorEventListener {
                 bearing       = location.bearing,
                 hdop          = if (location.hasAccuracy()) location.accuracy else -1f,
                 vdop          = if (location.hasVerticalAccuracy()) location.verticalAccuracyMeters else -1f,
-                satellites    = location.extras?.getInt("satellites") ?: 0,
+                satellites    = satellitesUsed,
                 altitudeEllipsoid = location.altitude,
                 speedLimitKmh = currentSpeedLimit.value ?: 0,
                 speedLimitEstimated = speedLimitEstimated.value ?: false

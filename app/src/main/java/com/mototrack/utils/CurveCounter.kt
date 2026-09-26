@@ -9,11 +9,17 @@ import kotlin.math.abs
  *
  * Una curva empieza al pasar de [START_DEG] y termina al bajar de [END_DEG] (la diferencia
  * evita contar dos veces un pequeño bamboleo). Solo cuenta si duró al menos [MIN_MS].
+ *
+ * Por debajo de [MIN_SPEED_KMH] no hay curvas (a pie o parado la inclinación es la postura
+ * del móvil), y un hueco de más de [MAX_GAP_MS] entre puntos (sin GPS) cierra la curva en
+ * vez de alargarla.
  */
 object CurveCounter {
     const val START_DEG = 10f
     const val END_DEG = 6f
     const val MIN_MS = 1_000L
+    const val MIN_SPEED_KMH = 15f
+    const val MAX_GAP_MS = 3_000L
     // Lecturas por encima de esto son glitches del sensor, igual que en el máximo de inclinación
     private const val MAX_VALID_DEG = 70f
 
@@ -33,7 +39,11 @@ object CurveCounter {
             side = 0
         }
 
+        var prevMs = Long.MIN_VALUE
         for (p in points.sortedBy { it.timestamp }) {
+            if (prevMs != Long.MIN_VALUE && p.timestamp - prevMs > MAX_GAP_MS) close()
+            prevMs = p.timestamp
+            if (p.speedKmh < MIN_SPEED_KMH) { close(); continue }
             val lean = p.leanAngle
             if (abs(lean) > MAX_VALID_DEG) continue
             when {
