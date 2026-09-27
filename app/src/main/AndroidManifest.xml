@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Permisos de ubicación -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
@@ -21,14 +22,25 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Desplegar la barra de notificaciones (controles de música del sistema) al pulsar la pastilla -->
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+
     <!-- Mantener CPU activa durante grabación -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Ver el nombre de las apps con icono (iVoox, Apple Music, la SER…) para NowPlaying -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_moto"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_moto"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MotoTrack">
 
@@ -46,6 +58,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Acceso a notificaciones: necesario para leer qué suena en otras apps (NowPlaying) -->
+        <service
+            android:name=".service.MediaListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Da acceso a otras apps al CSV de depuración al compartirlo -->
         <provider

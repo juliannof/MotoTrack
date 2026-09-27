@@ -40,6 +40,7 @@ object GpxExporter {
             sb.appendLine("        <extensions>")
             sb.appendLine("          <leanAngle>${String.format("%.1f", pt.leanAngle)}</leanAngle>")
             sb.appendLine("          <accelTotal>${String.format("%.3f", pt.accelTotal)}</accelTotal>")
+            sb.appendLine("          <longAccel>${String.format("%.3f", pt.longAccel)}</longAccel>")
             sb.appendLine("        </extensions>")
             sb.appendLine("      </trkpt>")
         }

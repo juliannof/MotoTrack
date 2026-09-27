@@ -13,6 +13,14 @@
     <color name="accent_orange">#FF5722</color>
     <color name="accent_green">#8BC34A</color>
 
+    <!-- Fondo del icono de la app -->
+    <color name="ic_launcher_background">#0D0D0D</color>
+
+    <!-- Exceso de velocidad y borde de las tarjetas -->
+    <color name="below_sea_blue">#2C56CC</color>
+    <color name="over_limit_red">#FF3B30</color>
+    <color name="card_stroke">#33FFFFFF</color>
+
     <!-- Botones de acción -->
     <color name="start_green">#2E7D32</color>
     <color name="stop_red">#C62828</color>

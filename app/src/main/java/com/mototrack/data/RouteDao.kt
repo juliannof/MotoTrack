@@ -17,8 +17,12 @@ interface RouteDao {
     @Delete
     suspend fun deleteRoute(route: Route)
 
-    @Query("SELECT * FROM routes ORDER BY startTime DESC")
-    fun getAllRoutes(): LiveData<List<Route>>
+    @Query("SELECT * FROM routes WHERE ownerEmail = :owner ORDER BY startTime DESC")
+    fun getRoutesFor(owner: String): LiveData<List<Route>>
+
+    /** Las rutas anteriores a las cuentas pasan a la primera cuenta que entra. */
+    @Query("UPDATE routes SET ownerEmail = :owner WHERE ownerEmail = ''")
+    suspend fun claimUnownedRoutes(owner: String)
 
     @Query("SELECT * FROM routes WHERE id = :id")
     suspend fun getRouteById(id: Long): Route?

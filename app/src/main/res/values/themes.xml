@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MotoTrack" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.MotoTrack" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@color/colorPrimaryDark</item>
         <item name="android:navigationBarColor">@color/surface</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.MotoTrack.Dialog</item>
+    </style>
+
+    <!-- Diálogos: fondo de las tarjetas, texto claro y botones en cian (colorPrimary de la app
+         es casi negro y los botones no se leían) -->
+    <style name="ThemeOverlay.MotoTrack.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorPrimary">@color/accent_cyan</item>
     </style>
 </resources>
