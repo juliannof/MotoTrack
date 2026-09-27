@@ -555,7 +555,8 @@ class DashboardFragment : Fragment() {
         when {
             np != null -> {
                 tv.text = "♪ " + np.title + (np.artist?.let { " — $it" } ?: "") + " · " + np.app
-                tv.setOnClickListener(null)
+                // Al pulsar: se despliega la barra, con los controles de música del sistema
+                tv.setOnClickListener { NowPlaying.expandNotificationShade(requireContext()) }
                 tv.visibility = View.VISIBLE
             }
             NowPlaying.accessGranted.value != true && !prefs.getBoolean(KEY_MUSIC_HINT_SEEN, false) -> {

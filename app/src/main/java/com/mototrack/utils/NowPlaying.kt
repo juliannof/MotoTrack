@@ -85,6 +85,20 @@ object NowPlaying {
         )
     }
 
+    /**
+     * Despliega la barra de notificaciones, donde el sistema muestra los controles de la música.
+     * No hay API pública: se llama por reflexión a StatusBarManager (permiso EXPAND_STATUS_BAR).
+     * Devuelve false si esta versión de Android no lo permite.
+     */
+    @android.annotation.SuppressLint("WrongConstant", "PrivateApi")
+    fun expandNotificationShade(context: Context): Boolean = try {
+        val bar = context.getSystemService("statusbar")
+        Class.forName("android.app.StatusBarManager").getMethod("expandNotificationsPanel").invoke(bar)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
     private fun appLabel(pkg: String): String {
         val pm = appContext?.packageManager
         return try {
