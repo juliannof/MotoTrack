@@ -25,6 +25,14 @@
     <!-- Mantener CPU activa durante grabación -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Ver el nombre de las apps con icono (iVoox, Apple Music, la SER…) para NowPlaying -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -47,6 +55,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Acceso a notificaciones: necesario para leer qué suena en otras apps (NowPlaying) -->
+        <service
+            android:name=".service.MediaListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Da acceso a otras apps al CSV de depuración al compartirlo -->
         <provider

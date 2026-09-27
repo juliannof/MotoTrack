@@ -119,6 +119,14 @@
                         android:textSize="14sp"
                     android:visibility="gone" />
 
+                <!-- Qué suena ahora (iVoox, Apple Music, la SER…) -->
+                    <com.mototrack.ui.TickerView
+                    android:id="@+id/tv_now_playing"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:visibility="gone" />
+
                 <com.mototrack.ui.SpeedDigitsView
                     android:id="@+id/tv_speed"
                     android:layout_width="match_parent"

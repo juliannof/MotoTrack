@@ -1,6 +1,9 @@
 package com.mototrack.ui
 
+import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
+import android.provider.Settings
 import android.os.Bundle
 import android.util.Log
 import android.os.SystemClock
@@ -17,6 +20,7 @@ import kotlinx.coroutines.launch
 import android.location.Location
 import com.mototrack.utils.Daylight
 import com.mototrack.utils.HeatTrail
+import com.mototrack.utils.NowPlaying
 import com.mototrack.utils.RainForecast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -180,6 +184,10 @@ class DashboardFragment : Fragment() {
         }
         viewModel.maxLeanLeft.observe(viewLifecycleOwner) { showMaxLean() }
         viewModel.maxLeanRight.observe(viewLifecycleOwner) { showMaxLean() }
+
+        // Qué suena en el móvil (iVoox, Apple Music, la SER…)
+        NowPlaying.info.observe(viewLifecycleOwner) { updateNowPlaying() }
+        NowPlaying.accessGranted.observe(viewLifecycleOwner) { updateNowPlaying() }
 
         viewModel.avgSpeed.observe(viewLifecycleOwner) { avg ->
             binding.tvAvgSpeed.text = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) String.format("%.0f", avg)
@@ -506,6 +514,7 @@ class DashboardFragment : Fragment() {
     override fun onStart() {
         super.onStart()
         binding.dashboardMap?.onStart()
+        NowPlaying.start(requireContext())
         val monitor = altitudeMonitor ?: AltitudeMonitor(requireContext()).also { altitudeMonitor = it }
         monitor.onSpeed = ::onIdleSpeed
         monitor.onMotion = ::onMotionDetected
@@ -532,6 +541,34 @@ class DashboardFragment : Fragment() {
         super.onStop()
         binding.dashboardMap?.onStop()
         altitudeMonitor?.stop()
+        NowPlaying.stop()
+    }
+
+    /**
+     * "♪ Título — Artista · App" cuando algo suena. Sin el acceso a notificaciones (que Android
+     * exige para leer otras apps) se ofrece activarlo, una sola vez.
+     */
+    private fun updateNowPlaying() {
+        val tv = _binding?.tvNowPlaying ?: return
+        val np = NowPlaying.info.value
+        val prefs = requireContext().getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
+        when {
+            np != null -> {
+                tv.text = "♪ " + np.title + (np.artist?.let { " — $it" } ?: "") + " · " + np.app
+                tv.setOnClickListener(null)
+                tv.visibility = View.VISIBLE
+            }
+            NowPlaying.accessGranted.value != true && !prefs.getBoolean(KEY_MUSIC_HINT_SEEN, false) -> {
+                tv.text = "♪ ¿Qué suena? Toca para activar el acceso"
+                tv.setOnClickListener {
+                    prefs.edit().putBoolean(KEY_MUSIC_HINT_SEEN, true).apply()
+                    tv.visibility = View.GONE
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+                tv.visibility = View.VISIBLE
+            }
+            else -> tv.visibility = View.GONE
+        }
     }
 
     override fun onResume() {
@@ -565,6 +602,7 @@ class DashboardFragment : Fragment() {
         const val DEFAULT_DISTANCE_REFERENCE_KM = 50f
 
         private const val MAP_STATE = "dashboard_map_state"
+        private const val KEY_MUSIC_HINT_SEEN = "music_hint_seen"
         private const val MAP_ZOOM = 16f
         // Fix más preciso que esto = GPS de verdad (no una posición por red de cientos de metros)
         private const val MAP_MAX_ACCURACY_M = 25.0

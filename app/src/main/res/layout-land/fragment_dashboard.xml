@@ -97,6 +97,7 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="14sp"
                         android:visibility="gone" />
+
                 </LinearLayout>
 
                 <!-- km/h justo debajo del número, centrado con él -->
@@ -517,6 +518,17 @@
             android:textColor="@android:color/white"
             android:textSize="12sp"
             android:textStyle="bold" />
+        <!-- Qué suena ahora (iVoox, Apple Music, la SER…), encima del mapa y entre los dos vúmetros -->
+        <com.mototrack.ui.TickerView
+            android:id="@+id/tv_now_playing"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginStart="76dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginEnd="76dp"
+            android:background="@drawable/bg_now_playing"
+            android:visibility="gone" />
     </FrameLayout>
 
 </LinearLayout>
