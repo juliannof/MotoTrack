@@ -11,7 +11,12 @@ import kotlin.math.min
 
 /**
  * Señal de tráfico de límite de velocidad (R-301): círculo blanco con aro rojo
- * y el número en negro. Sin dato, aro gris con un guion.
+ * y el número en negro, siempre con esos colores según normativa. Sin dato,
+ * aro gris con un guion (eso no pretende ser una señal real).
+ *
+ * Si vas por encima del límite o el dato es estimado (no una señal real) se
+ * avisa en otro sitio (el número de velocidad, ver DashboardFragment), no
+ * cambiando los colores de la señal.
  *
  * Como LeanMeterView, la dibujamos a mano en un Canvas.
  */
@@ -21,8 +26,6 @@ class SpeedLimitSignView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private var limit = 0          // km/h; 0 = desconocido
-    private var exceeded = false
-    private var estimated = false
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -37,20 +40,6 @@ class SpeedLimitSignView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** Límite deducido del tipo de vía (no de una señal real): aro naranja. */
-    fun setEstimated(value: Boolean) {
-        if (value == estimated) return
-        estimated = value
-        invalidate()
-    }
-
-    /** Si vas por encima del límite el interior se tiñe de rojo claro. */
-    fun setExceeded(value: Boolean) {
-        if (value == exceeded) return
-        exceeded = value
-        invalidate()
-    }
-
     override fun onDraw(canvas: Canvas) {
         val size = min(width, height).toFloat()
         val cx = width / 2f
@@ -58,18 +47,10 @@ class SpeedLimitSignView @JvmOverloads constructor(
         val r = size / 2f
         val known = limit > 0
 
-        ringPaint.color = when {
-            !known -> GREY
-            estimated -> AMBER
-            else -> RED
-        }
+        ringPaint.color = if (known) RED else GREY
         canvas.drawCircle(cx, cy, r, ringPaint)
 
-        fillPaint.color = when {
-            !known -> WHITE
-            exceeded -> LIGHT_RED
-            else -> WHITE
-        }
+        fillPaint.color = WHITE
         canvas.drawCircle(cx, cy, r * 0.72f, fillPaint)
 
         val label = if (known) limit.toString() else "—"
@@ -82,8 +63,6 @@ class SpeedLimitSignView @JvmOverloads constructor(
 
     private companion object {
         val RED = Color.parseColor("#D32F2F")
-        val LIGHT_RED = Color.parseColor("#FFCDD2")
-        val AMBER = Color.parseColor("#F57C00")
         val GREY = Color.parseColor("#666666")
         val WHITE = Color.WHITE
     }

@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Polyline
 import androidx.lifecycle.lifecycleScope
@@ -95,9 +96,9 @@ class DashboardFragment : Fragment() {
         val exceeded = viewModel.overSpeedLimit.value ?: false
         // Al arrancar, sin lectura de la vía, la señal no se muestra (nada de un "—" gris)
         binding.speedLimitSign.visibility = if (limit > 0) View.VISIBLE else View.GONE
-        binding.speedLimitSign.setEstimated(viewModel.speedLimitEstimated.value ?: false)
         binding.speedLimitSign.setLimit(limit)
-        binding.speedLimitSign.setExceeded(exceeded)
+        // Estimado o por encima del límite se avisa en el número de velocidad, no en la
+        // señal: esa debe verse siempre con los colores oficiales (R-301)
 
         val color = ContextCompat.getColor(
             requireContext(), if (exceeded) R.color.over_limit_red else R.color.text_primary)
@@ -118,15 +119,12 @@ class DashboardFragment : Fragment() {
         // Velocidad
         viewModel.currentSpeed.observe(viewLifecycleOwner) { speed ->
             updateHeading()
-            updateAltitudeMeter()
-            updateDistanceMeter()
             binding.tvSpeed.text = String.format("%.0f", speed)
             updateSpeedLimitSign()
         }
 
         // Límite de la vía (OpenStreetMap)
         viewModel.currentSpeedLimit.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
-        viewModel.speedLimitEstimated.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
         viewModel.overSpeedLimit.observe(viewLifecycleOwner) { updateSpeedLimitSign() }
 
         // Vúmetro: necesita el signo para saber hacia qué lado encender
@@ -134,11 +132,16 @@ class DashboardFragment : Fragment() {
             binding.leanMeter.setLean(lean)
         }
 
-        // Aceleración
-        // Vúmetro vertical: positivo = acelerando, negativo = frenando
+        // Aceleración: sin número, lo dice el propio vúmetro (LEDs y sentido)
         viewModel.longitudinalAccel.observe(viewLifecycleOwner) { accel ->
-            binding.tvAccel.text = String.format("%+.1f", accel)
             binding.accelMeter.setAccel(accel)
+        }
+
+        // Mientras no haya calibración primaria de la ruta, inclinación y aceleración no
+        // son de fiar: ambos vúmetros se muestran en gris claro
+        viewModel.leanValid.observe(viewLifecycleOwner) { valid ->
+            binding.leanMeter.setValid(valid)
+            binding.accelMeter.setValid(valid)
         }
 
         // Altura sobre el nivel del mar
@@ -148,12 +151,7 @@ class DashboardFragment : Fragment() {
             val color = ContextCompat.getColor(
                 requireContext(), if (alt < 0) R.color.below_sea_blue else R.color.accent_orange)
             binding.tvAltitude.setTextColor(color)
-            binding.altitudeMeter.setColor(color)
-            updateAltitudeMeter()
         }
-        viewModel.maxAltitude.observe(viewLifecycleOwner) { updateAltitudeMeter() }
-        // La ruta más larga que has hecho es la referencia del vúmetro de distancia
-        viewModel.allRoutes.observe(viewLifecycleOwner) { updateDistanceMeter() }
 
         // Calibración del ángulo: se avisa en la propia tarjeta de inclinación
         viewModel.calibrationStatus.observe(viewLifecycleOwner) { showCalibration(it) }
@@ -161,12 +159,11 @@ class DashboardFragment : Fragment() {
         // Distancia
         viewModel.distanceKm.observe(viewLifecycleOwner) { km ->
             binding.tvDistance.text = String.format("%.2f km", km)
-            updateDistanceMeter()
         }
 
-        // Conteo de puntos
+        // Conteo de puntos (solo existe en el layout vertical, junto a distancia se quitó)
         viewModel.pointCount.observe(viewLifecycleOwner) { count ->
-            binding.tvPointCount.text = "$count pts"
+            binding.tvPointCount?.text = "$count pts"
         }
 
         // Stats máximos
@@ -196,8 +193,6 @@ class DashboardFragment : Fragment() {
 
         // Estado de grabación → actualizar UI
         viewModel.isRecording.observe(viewLifecycleOwner) { recording ->
-            updateAltitudeMeter()
-            updateDistanceMeter()
             if (recording) {
                 binding.btnRecord.text = "⏹ DETENER"
                 binding.btnRecord.setBackgroundColor(
@@ -213,29 +208,6 @@ class DashboardFragment : Fragment() {
                 resetUI()
             }
         }
-    }
-
-    /**
-     * Último LED = la ruta terminada más larga (o 50 km si aún no hay ninguna). Sin distancia
-     * recorrida el vúmetro está vacío; se llena según avanzas, esté la moto en marcha o parada.
-     */
-    private fun updateDistanceMeter() {
-        val km = viewModel.distanceKm.value ?: 0f
-        val longest = viewModel.allRoutes.value.orEmpty()
-            .filter { it.isCompleted }.maxOfOrNull { it.distanceKm } ?: 0f
-        val reference = if (longest > 0f) longest else DEFAULT_DISTANCE_REFERENCE_KM
-        binding.distanceMeter.setFraction(if (km <= 0f) 0f else km / reference)
-    }
-
-    /**
-     * Vúmetro de altura: el primer LED es "bajo el nivel del mar"; del segundo al último,
-     * de 0 m a la máxima de la ruta (último LED). Sin lecturas de la ruta no hay máximo con
-     * que comparar, así que los LEDs de la escala quedan apagados.
-     */
-    private fun updateAltitudeMeter() {
-        val alt = viewModel.currentAltitude.value ?: return
-        val routeMax = viewModel.maxAltitude.value ?: Double.NaN
-        binding.altitudeMeter.set(alt, if (routeMax.isNaN()) 0.0 else maxOf(routeMax, alt))
     }
 
     /** En horizontal no se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
@@ -311,7 +283,6 @@ class DashboardFragment : Fragment() {
      */
     private fun resetUI() {
         binding.tvSpeed.text = "0"
-        binding.tvAccel.text = "+0.0"
         binding.accelMeter.reset()
         binding.leanMeter.reset()
     }
@@ -365,11 +336,27 @@ class DashboardFragment : Fragment() {
     private fun moveMap(p: DoubleArray) {
         val map = googleMap ?: return
         applyMapStyle(map, p)
-        val camera = CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
+
+        // Parado o despacio: zoom fijo centrado en el punto actual. Por encima de
+        // MAP_FAST_SPEED_KMH: zoom out encuadrando toda la ruta recorrida, hasta que se
+        // vuelva a bajar de esa velocidad
+        val fast = (viewModel.currentSpeed.value ?: 0f) >= MAP_FAST_SPEED_KMH && trailPoints.size >= 2
+        val camera = (if (fast) routeBoundsCamera() else null)
+            ?: CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
+
         if (!mapCentered) {
             map.moveCamera(camera); mapCentered = true
             revealMap()
         } else map.animateCamera(camera)
+    }
+
+    /** Encuadre de toda la ruta recorrida; null si el mapa aún no tiene tamaño (recién creado). */
+    private fun routeBoundsCamera() = try {
+        val bounds = LatLngBounds.Builder().apply { trailPoints.forEach { include(it) } }.build()
+        val padding = (MAP_ROUTE_PADDING_DP * resources.displayMetrics.density).toInt()
+        CameraUpdateFactory.newLatLngBounds(bounds, padding)
+    } catch (e: IllegalStateException) {
+        null   // mapa sin layout todavía: se reintentará en la próxima posición
     }
 
     /** Quita la cortina con un fundido, dando un momento a que se pinten los tiles de la zona. */
@@ -599,12 +586,13 @@ class DashboardFragment : Fragment() {
 
     private companion object {
 
-        // Referencia del vúmetro de distancia mientras no haya ninguna ruta terminada
-        const val DEFAULT_DISTANCE_REFERENCE_KM = 50f
-
         private const val MAP_STATE = "dashboard_map_state"
         private const val KEY_MUSIC_HINT_SEEN = "music_hint_seen"
         private const val MAP_ZOOM = 16f
+        // Por encima de esta velocidad el mapa deja de centrar en el punto actual con zoom
+        // fijo y pasa a encuadrar toda la ruta recorrida (zoom out), seguido mientras dure
+        private const val MAP_FAST_SPEED_KMH = 15f
+        private const val MAP_ROUTE_PADDING_DP = 40
         // Fix más preciso que esto = GPS de verdad (no una posición por red de cientos de metros)
         private const val MAP_MAX_ACCURACY_M = 25.0
         private const val MAP_REVEAL_DELAY_MS = 800L

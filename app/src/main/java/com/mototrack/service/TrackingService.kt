@@ -64,36 +64,60 @@ class TrackingService : Service(), SensorEventListener {
         // Clave nueva: los offsets guardados con el cálculo antiguo (roll de
         // getOrientation) no valen para la inclinación lateral actual
         private const val PREF_LEAN_OFFSET = "resting_lean_offset"
-        // Una moto no pasa de ~65° de inclinación; más allá es ruido de orientación
-        private const val MAX_PLAUSIBLE_LEAN_DEG = 70f
+        // Nº de calibraciones primarias fundidas en PREF_LEAN_OFFSET desde siempre (todas las
+        // rutas, no solo la de hoy): con esto el offset es una media incremental, no el último
+        // valor suelto
+        private const val PREF_LEAN_COUNT = "resting_lean_offset_count"
+        // La R1200RS homologa ~47° de inclinación máxima; más allá es ruido de orientación,
+        // no la moto tumbándose (picos vistos de 47,9° y 56,2° que no cuadran ni con la moto
+        // ni con el estilo de conducción)
+        private const val MAX_PLAUSIBLE_LEAN_DEG = 50f
+        // El lean real no puede cambiar más rápido que esto (incluido un cambio de signo);
+        // un salto mayor en una sola lectura es un fallo puntual del sensor de rotación
+        private const val MAX_LEAN_RATE_DEG_S = 150f
+        // Tras un salto imposible el sensor de rotación se queda "pegado" un rato: se pone
+        // en cuarentena el lean este tiempo en vez de fiarse de la primera lectura que
+        // vuelva a parecer razonable (también puede ser ruido decayendo desde el salto)
+        private const val LEAN_QUARANTINE_MS = 2_000L
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
         private const val MIN_SCREEN_VERTICALITY = 0.5f
 
-        // Autocalibración del cero de inclinación (moto derecha). Lo mejor es hacerlo parado,
-        // pero solo tras haber recorrido una distancia mínima: así se sabe que el móvil va
-        // montado en la moto y no en la mano o sobre una mesa. Ventana de 3 s con el ángulo
-        // estable. Una vez por ruta.
+        // Autocalibración del cero de inclinación (moto derecha): calibración PRIMARIA en
+        // cuanto hay referencia fiable de marcha en recta — no hace falta pararse, la media
+        // de muchos metros en recto ya es mejor referencia del cero que cualquier parada
+        // (donde casi siempre hay un pie en el suelo o la moto en el caballete). A partir de
+        // ahí, el resto de la ruta solo aporta correcciones SECUNDARIAS de bajo peso cada vez
+        // que se baja de [STRAIGHT_MIN_SPEED_KMH] (tráfico lento, semáforo, parada real).
         private const val CALIB_MIN_DISTANCE_M = 200f
-        private const val CALIB_STOPPED_SPEED_KMH = 1f
-        private const val CALIB_WINDOW_MS = 3_000L
         // Marcha en recta: rodando >15 km/h, sin fuerza lateral y con el rumbo GPS estable.
-        // Rodando recto la moto va derecha, así que su ángulo medio es una referencia del
-        // cero independiente de la parada: si el ángulo parado difiere más de 4°, la moto
-        // estaba ladeada (pie en el suelo, caballete) y esa parada no vale para calibrar.
         private const val STRAIGHT_MIN_SPEED_KMH = 15f
         private const val STRAIGHT_MAX_LATERAL_MS2 = 0.5f
         private const val STRAIGHT_MAX_BEARING_DELTA_DEG = 4f
         private const val STRAIGHT_MIN_TIME_MS = 3_000L
         private const val STRAIGHT_MAX_FIX_AGE_S = 1.6
-        private const val CALIB_MAX_DIFF_FROM_STRAIGHT_DEG = 4f
         private const val LATERAL_SMOOTHING = 0.02f
-        private const val CALIB_MAX_STD_DEG = 0.5
-        // Una inclinación del soporte mayor que esto no es del soporte: se ignora
+        // Una inclinación medida (primaria o secundaria) mayor que esto no es del soporte:
+        // se descarta la muestra
         private const val CALIB_MAX_OFFSET_DEG = 15f
+        // Si una muestra se aleja del offset vigente más que esto, la moto estaba ladeada
+        // (pie en el suelo, caballete) y no vale para calibrar/corregir
+        private const val CALIB_MAX_DIFF_FROM_STRAIGHT_DEG = 4f
+        // Ventana de la corrección secundaria: hay que mantenerse por debajo de
+        // STRAIGHT_MIN_SPEED_KMH con el ángulo estable este tiempo seguido para que cuente
+        private const val CALIB_CORR_WINDOW_MS = 3_000L
+        private const val CALIB_CORR_MAX_STD_DEG = 1.0
+        // Peso de cada corrección secundaria sobre el offset vigente: pequeño a propósito,
+        // para que ninguna parada aislada pueda desviar el offset de golpe
+        private const val CALIB_CORR_LEARNING_RATE = 0.15f
 
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
         private const val ACCEL_SMOOTHING = 0.1f
+        // Un bache da un pico aislado de decenas de m/s² que ninguna moto de calle alcanza
+        // acelerando o frenando (visto hoy: picos de ±9-10 m/s² ya después de suavizar, es
+        // decir con ráfagas mucho mayores en crudo); se descarta antes de que contamine el
+        // filtro, igual que con el lean
+        private const val MAX_PLAUSIBLE_ACCEL_MS2 = 12f
 
         // Velocidad "caducada": sin fix nuevo, ver startStaleSpeedWatchdog
         private const val STALE_FIX_STOPPED_S = 2.5
@@ -148,6 +172,10 @@ class TrackingService : Service(), SensorEventListener {
         val currentPosition = MutableLiveData<DoubleArray?>(null) // [lat, lon, precisión en m] de la última posición
         // true en cuanto se calibra una vez desde que se abrió la app (el mapa del Dashboard se oculta)
         val calibratedSinceAppStart = MutableLiveData(false)
+        // false hasta la calibración primaria de ESTA ruta: antes de eso currentLean /
+        // currentLeanSigned no se actualizan y no son de fiar (el offset puede venir de una
+        // ruta anterior, o ser 0 la primera vez)
+        val leanValid = MutableLiveData(false)
         val currentAltitude = MutableLiveData(0.0)       // metros
         // Alturas extremas de la ruta en curso (m); NaN = todavía sin dato. Pueden ser
         // negativas: hay rutas que pasan por debajo del nivel del mar.
@@ -203,6 +231,8 @@ class TrackingService : Service(), SensorEventListener {
     // zona muerta solo recorta lo que sale (parado no debe bailar entre +0.0 y -0.1)
     private var accelFilter = 0f
     private var smoothedAccel = 0f
+    // "forward" sin filtrar ni descartar, solo para el log crudo (diagnóstico de picos)
+    private var forwardAccelRaw = 0f
 
     // Consulta del límite de velocidad
     /** Estado de una consulta de límite a Overpass: en curso, cuándo y dónde fue la última. */
@@ -224,10 +254,18 @@ class TrackingService : Service(), SensorEventListener {
     private var staleSpeedJob: Job? = null
     private var lastGpsBearing = 0f
     private var restingAngleOffset = 0f
+    // Nº de calibraciones primarias fundidas en restingAngleOffset desde siempre (persistido)
+    private var calibrationCount = 0
     private var rawLeanAngle = 0f
-    // Ventana de autocalibración con la moto parada (a la frecuencia del sensor)
-    private var stillStartMs = 0L
-    private var stillN = 0
+    // Filtro de saltos imposibles del lean (ver plausibleLean)
+    private var prevRawLean = Float.NaN
+    private var prevLeanEventNs = 0L
+    private var leanQuarantineUntilMs = 0L
+    // Ventana de la corrección secundaria (moto <15 km/h, a la frecuencia del sensor)
+    private var corrStartMs = 0L
+    private var corrN = 0
+    private var corrSum = 0.0
+    private var corrSumSq = 0.0
     // Detector de marcha en recta y ángulo medio rodando recto (referencia del cero)
     @Volatile private var lateralAccelMean = 0f
     @Volatile private var bearingSteady = false
@@ -236,10 +274,8 @@ class TrackingService : Service(), SensorEventListener {
     private var straightLeanRef = Float.NaN
     private var straightRefSum = 0.0
     private var straightRefN = 0
-    // Ya se calibró en esta ruta (una vez por ruta)
+    // Ya hubo calibración primaria en esta ruta; a partir de ahí solo correcciones secundarias
     private var calibratedThisRide = false
-    private var stillSum = 0.0
-    private var stillSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
     // Altura filtrada (NaN hasta el primer fix de la ruta)
@@ -326,13 +362,17 @@ class TrackingService : Service(), SensorEventListener {
         minAltitude.postValue(Double.NaN)
         altFiltered = Double.NaN
         calibratedThisRide = false
+        leanValid.postValue(false)
+        prevRawLean = Float.NaN
+        prevLeanEventNs = 0L
+        leanQuarantineUntilMs = 0L
         straightSinceMs = 0L
         straightLeanRef = Float.NaN
         straightRefSum = 0.0
         straightRefN = 0
         prevBearing = Float.NaN
         bearingSteady = false
-        stillN = 0
+        corrN = 0
         calibrationStatus.postValue(CalibrationStatus.WAITING)
         avgSpeed.postValue(0f)
         longitudinalAccel.postValue(0f)
@@ -577,7 +617,13 @@ class TrackingService : Service(), SensorEventListener {
         // Media CON signo: la vibración del motor se compensa y queda ~0; una curva mantiene
         // la fuerza lateral un buen rato. (La media del valor absoluto nunca baja de ~0,6.)
         lateralAccelMean += LATERAL_SMOOTHING * (lateral - lateralAccelMean)
-        accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
+        forwardAccelRaw = forward
+        // Un bache aislado no debe mover el filtro ni un poco: se descarta la muestra entera
+        // en vez de dejar que aporte su parte (igual que un salto de lean, pero sin cuarentena:
+        // aquí el filtro EWMA ya evita que un pico suelto deje "pegado" el valor)
+        if (abs(forward) <= MAX_PLAUSIBLE_ACCEL_MS2) {
+            accelFilter += ACCEL_SMOOTHING * (forward - accelFilter)
+        }
         smoothedAccel = if (abs(accelFilter) < ACCEL_DEADBAND) 0f else accelFilter
         longitudinalAccel.postValue(smoothedAccel)
         // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
@@ -774,21 +820,28 @@ class TrackingService : Service(), SensorEventListener {
                     val prev = compassHeading.value
                     if (prev == null || angularDiff(prev, az) >= 2f) compassHeading.postValue(az)
                 }
-                // Lectura no fiable: se conserva el último lean válido
-                rawLeanAngle = lateralLeanDegrees() ?: return
-                autoCalibrateWhenStill(rawLeanAngle)
-                val correctedLean = rawLeanAngle - restingAngleOffset
-                currentLeanDeg = correctedLean
-                currentLean.postValue(abs(correctedLean))
-                currentLeanSigned.postValue(correctedLean)
-                if (abs(correctedLean) > (maxLean.value ?: 0f)) {
-                    maxLean.postValue(abs(correctedLean))
-                }
-                // Convención: negativo = izquierda, positivo = derecha
-                if (correctedLean < 0 && -correctedLean > (maxLeanLeft.value ?: 0f)) {
-                    maxLeanLeft.postValue(-correctedLean)
-                } else if (correctedLean > 0 && correctedLean > (maxLeanRight.value ?: 0f)) {
-                    maxLeanRight.postValue(correctedLean)
+                // Lectura no fiable, salto imposible o en cuarentena tras uno: se conserva
+                // el último lean válido
+                val lean = lateralLeanDegrees()?.let { plausibleLean(it, event.timestamp) } ?: return
+                rawLeanAngle = lean
+                updateCalibration(rawLeanAngle)
+                // Antes de la calibración primaria de esta ruta el offset no es de fiar
+                // (puede venir de una ruta anterior, o ser 0 la primera vez): no se publica
+                // ni se cuenta para los máximos hasta entonces.
+                if (calibratedThisRide) {
+                    val correctedLean = rawLeanAngle - restingAngleOffset
+                    currentLeanDeg = correctedLean
+                    currentLean.postValue(abs(correctedLean))
+                    currentLeanSigned.postValue(correctedLean)
+                    if (abs(correctedLean) > (maxLean.value ?: 0f)) {
+                        maxLean.postValue(abs(correctedLean))
+                    }
+                    // Convención: negativo = izquierda, positivo = derecha
+                    if (correctedLean < 0 && -correctedLean > (maxLeanLeft.value ?: 0f)) {
+                        maxLeanLeft.postValue(-correctedLean)
+                    } else if (correctedLean > 0 && correctedLean > (maxLeanRight.value ?: 0f)) {
+                        maxLeanRight.postValue(correctedLean)
+                    }
                 }
             }
         }
@@ -802,6 +855,11 @@ class TrackingService : Service(), SensorEventListener {
      * ¿Vamos recto? En marcha a más de 15 km/h con una posición reciente, sin fuerza
      * lateral y con el rumbo GPS estable durante al menos 3 s. Mientras dura, el ángulo
      * medio es la referencia del cero (moto derecha), independiente de la parada.
+     *
+     * La calibración PRIMARIA se dispara aquí dentro a propósito (no en otro sitio ni en
+     * otro instante): así queda garantizado que la primera calibración de la ruta ocurre
+     * siempre en marcha, en el mismo tick en que se confirma "vamos recto", y nunca se
+     * demora hasta un momento posterior en que ya se podría estar parado.
      */
     private fun trackStraightRiding(raw: Float) {
         val fixAgeS = lastLocation?.let {
@@ -818,48 +876,103 @@ class TrackingService : Service(), SensorEventListener {
             straightRefSum += raw
             straightRefN++
             straightLeanRef = (straightRefSum / straightRefN).toFloat()
+
+            if (!calibratedThisRide && totalDistance * 1000f >= CALIB_MIN_DISTANCE_M &&
+                abs(straightLeanRef) <= CALIB_MAX_OFFSET_DEG) {
+                applyPrimaryCalibration(straightLeanRef)
+            }
         }
     }
 
     /**
-     * Fija el cero de inclinación con la moto parada y derecha, una vez por ruta y solo
-     * después de haber recorrido una distancia mínima (CALIB_MIN_DISTANCE_M) y de haber
-     * rodado recto (hay referencia). Si el ángulo parado difiere de la referencia, la
-     * moto está ladeada (pie en el suelo): no vale y se espera a otra parada.
-     * Se evalúa en cada lectura del sensor (no en cada fix GPS: parado no llegan fixes).
+     * Calibración PRIMARIA (ver [trackStraightRiding], que es quien la dispara) y
+     * correcciones SECUNDARIAS (ver [trackSecondaryCorrection]) el resto de la ruta.
+     * Se evalúa en cada lectura del sensor.
      */
-    private fun autoCalibrateWhenStill(raw: Float) {
+    private fun updateCalibration(raw: Float) {
         trackStraightRiding(raw)
-        if (calibratedThisRide) return
-        val stopped = lastGpsSpeed < CALIB_STOPPED_SPEED_KMH
-        if (totalDistance * 1000f < CALIB_MIN_DISTANCE_M || straightLeanRef.isNaN() || !stopped) {
-            stillN = 0
+        if (calibratedThisRide) {
+            trackSecondaryCorrection(raw)
+        } else {
             setCalibrationStatus(CalibrationStatus.WAITING)
-            return
         }
-        setCalibrationStatus(CalibrationStatus.MEASURING)
-        val now = SystemClock.elapsedRealtime()
-        if (stillN == 0) { stillStartMs = now; stillSum = 0.0; stillSumSq = 0.0 }
-        stillN++; stillSum += raw; stillSumSq += raw.toDouble() * raw
-        if (now - stillStartMs < CALIB_WINDOW_MS) return
+    }
 
-        val mean = stillSum / stillN
-        val std = sqrt((stillSumSq / stillN - mean * mean).coerceAtLeast(0.0))
-        stillN = 0
-        if (std >= CALIB_MAX_STD_DEG || abs(mean) > CALIB_MAX_OFFSET_DEG) return
-        if (abs(mean - straightLeanRef) > CALIB_MAX_DIFF_FROM_STRAIGHT_DEG) {
-            Log.i(TAG, "Calibración descartada: parado ${fmt(mean.toFloat())}° vs recto ${fmt(straightLeanRef)}° (moto ladeada)")
-            return
+    /** Funde [measured] en el offset persistido como media incremental (histórico "de siempre"). */
+    private fun applyPrimaryCalibration(measured: Float) {
+        val newOffset = if (calibrationCount == 0) measured
+            else restingAngleOffset + (measured - restingAngleOffset) / (calibrationCount + 1)
+        calibrationCount++
+        if (abs(newOffset - restingAngleOffset) > 0.05f) {
+            Log.i(TAG, "Calibración primaria: offset ${fmt(restingAngleOffset)}° → ${fmt(newOffset)}° " +
+                "(muestra en recto ${fmt(measured)}°, histórico #$calibrationCount)")
         }
+        restingAngleOffset = newOffset
+        getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE).edit()
+            .putFloat(PREF_LEAN_OFFSET, restingAngleOffset)
+            .putInt(PREF_LEAN_COUNT, calibrationCount)
+            .apply()
         calibratedThisRide = true
         setCalibrationStatus(CalibrationStatus.DONE)
         calibratedSinceAppStart.postValue(true)
-        if (abs(mean - restingAngleOffset) > 0.3) {
-            Log.i(TAG, "Calibración automática: offset ${fmt(restingAngleOffset)}° → ${fmt(mean.toFloat())}°")
-            restingAngleOffset = mean.toFloat()
-            getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
-                .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
+        leanValid.postValue(true)
+    }
+
+    /**
+     * Correcciones SECUNDARIAS tras la primaria: cada vez que se baja de
+     * [STRAIGHT_MIN_SPEED_KMH] (tráfico lento, semáforo, parada real) con el ángulo estable
+     * durante [CALIB_CORR_WINDOW_MS], se compara esa media con el offset vigente. Si concuerda
+     * se aplica como ajuste de bajo peso ([CALIB_CORR_LEARNING_RATE]); si no (pie en el suelo,
+     * caballete), se descarta. A diferencia de la primaria, puede darse varias veces por ruta.
+     */
+    private fun trackSecondaryCorrection(raw: Float) {
+        val slow = lastGpsSpeed < STRAIGHT_MIN_SPEED_KMH
+        if (!slow) { corrN = 0; return }
+        val now = SystemClock.elapsedRealtime()
+        if (corrN == 0) { corrStartMs = now; corrSum = 0.0; corrSumSq = 0.0 }
+        corrN++; corrSum += raw; corrSumSq += raw.toDouble() * raw
+        if (now - corrStartMs < CALIB_CORR_WINDOW_MS) return
+
+        val mean = corrSum / corrN
+        val std = sqrt((corrSumSq / corrN - mean * mean).coerceAtLeast(0.0))
+        corrN = 0
+        if (std >= CALIB_CORR_MAX_STD_DEG || abs(mean) > CALIB_MAX_OFFSET_DEG) return
+        val diff = mean - restingAngleOffset
+        if (abs(diff) > CALIB_MAX_DIFF_FROM_STRAIGHT_DEG) {
+            Log.i(TAG, "Corrección secundaria descartada: ${fmt(mean.toFloat())}° vs offset ${fmt(restingAngleOffset)}° (moto ladeada)")
+            return
         }
+        if (abs(diff) < 0.05f) return
+        restingAngleOffset += (diff * CALIB_CORR_LEARNING_RATE).toFloat()
+        getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
+            .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
+        Log.i(TAG, "Corrección secundaria: offset ajustado a ${fmt(restingAngleOffset)}° (muestra ${fmt(mean.toFloat())}°)")
+    }
+
+    /**
+     * Descarta saltos de [raw] más rápidos de [MAX_LEAN_RATE_DEG_S] (incluye cambios de
+     * signo en una sola lectura, físicamente imposibles) y, tras uno, pone el lean en
+     * cuarentena [LEAN_QUARANTINE_MS]: el sensor de rotación se queda "pegado" un rato tras
+     * un fallo, así que ni el primer valor que vuelva a parecer razonable es de fiar todavía.
+     */
+    private fun plausibleLean(raw: Float, eventNs: Long): Float? {
+        val now = SystemClock.elapsedRealtime()
+        if (now < leanQuarantineUntilMs) return null
+        if (!prevRawLean.isNaN() && prevLeanEventNs != 0L) {
+            val dtS = (eventNs - prevLeanEventNs) / 1e9
+            if (dtS > 0) {
+                val rate = abs(raw - prevRawLean) / dtS
+                if (rate > MAX_LEAN_RATE_DEG_S) {
+                    leanQuarantineUntilMs = now + LEAN_QUARANTINE_MS
+                    Log.w(TAG, "Lean descartado: salto ${fmt(prevRawLean)}° → ${fmt(raw)}° " +
+                        "en ${(dtS * 1000).toInt()} ms (cuarentena ${LEAN_QUARANTINE_MS} ms)")
+                    return null
+                }
+            }
+        }
+        prevRawLean = raw
+        prevLeanEventNs = eventNs
+        return raw
     }
 
     /**
@@ -940,6 +1053,8 @@ class TrackingService : Service(), SensorEventListener {
             }
             append(',').append(currentSpeedLimit.value ?: 0)
             append(String.format(Locale.US, ",%.2f", smoothedAccel))
+            append(',').append(if (calibratedThisRide) 1 else 0)
+            append(String.format(Locale.US, ",%.3f", forwardAccelRaw))
         }
     }
 
@@ -988,6 +1103,7 @@ class TrackingService : Service(), SensorEventListener {
     private fun loadCalibration() {
         val prefs = getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
         restingAngleOffset = prefs.getFloat(PREF_LEAN_OFFSET, 0f)
+        calibrationCount = prefs.getInt(PREF_LEAN_COUNT, 0)
     }
 
     fun calibrate() {

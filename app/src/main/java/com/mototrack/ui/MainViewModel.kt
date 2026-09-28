@@ -52,6 +52,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentPlace = TrackingService.currentPlace
     val currentPosition = TrackingService.currentPosition
     val calibratedSinceAppStart = TrackingService.calibratedSinceAppStart
+    val leanValid = TrackingService.leanValid
     val currentAltitude = TrackingService.currentAltitude
     val maxAltitude = TrackingService.maxAltitude
     val minAltitude = TrackingService.minAltitude

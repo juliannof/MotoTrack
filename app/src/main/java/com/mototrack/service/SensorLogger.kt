@@ -50,9 +50,15 @@ class SensorLogger(private val file: File) {
     companion object {
         const val INTERVAL_MS = 100L
 
+        // lean_valid: 0 antes de la calibración primaria de la ruta (lean_deg no es de fiar
+        // todavía, ver TrackingService.updateCalibration), 1 a partir de entonces.
+        // accel_forward_raw: aceleración "adelante" sin filtrar ni descartar por plausibilidad
+        // (long_accel_ms2 es la que ya pasó por MAX_PLAUSIBLE_ACCEL_MS2 y el suavizado EWMA);
+        // sirve para auditar picos de bache igual que se hizo hoy con el lean.
         const val HEADER = "timestamp_ms,elapsed_s,lean_raw_deg,lean_offset_deg,lean_deg," +
             "screen_rotation,accel_x,accel_y,accel_z,accel_total,speed_kmh," +
-            "lat,lon,accuracy_m,fix_age_s,source,speed_limit_kmh,long_accel_ms2"
+            "lat,lon,accuracy_m,fix_age_s,source,speed_limit_kmh,long_accel_ms2,lean_valid," +
+            "accel_forward_raw"
 
         fun fileFor(context: Context, routeId: Long) =
             File(context.filesDir, "sensor_logs/route_$routeId.csv")

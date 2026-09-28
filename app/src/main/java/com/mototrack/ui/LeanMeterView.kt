@@ -66,12 +66,23 @@ class LeanMeterView @JvmOverloads constructor(
     private val colorAmber = Color.parseColor("#FFC107")
     private val colorOrange = Color.parseColor("#FF5722")
     private val colorRed = Color.parseColor("#F44336")
+    private val colorInvalid = Color.parseColor("#BDBDBD")   // gris claro: sin calibrar todavía
 
     /** Escala numérica bajo los LEDs (50 · 25 · 0 · 25 · 50); se apaga en la versión compacta. */
     var showScale = true
 
+    // Antes de la calibración primaria de la ruta el dato no es de fiar: se muestra en
+    // gris claro en vez de con los colores normales
+    private var valid = true
+
     fun setLean(degrees: Float) {
         lean = degrees
+        invalidate()
+    }
+
+    fun setValid(value: Boolean) {
+        if (value == valid) return
+        valid = value
         invalidate()
     }
 
@@ -89,12 +100,15 @@ class LeanMeterView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** Color según el ángulo que representa el LED. */
-    private fun colorFor(angle: Float) = when {
-        angle <= 20f -> colorGreen
-        angle <= 35f -> colorAmber
-        angle <= 45f -> colorOrange
-        else -> colorRed
+    /** Color según el ángulo que representa el LED; gris claro mientras no sea válido. */
+    private fun colorFor(angle: Float): Int {
+        if (!valid) return colorInvalid
+        return when {
+            angle <= 20f -> colorGreen
+            angle <= 35f -> colorAmber
+            angle <= 45f -> colorOrange
+            else -> colorRed
+        }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -180,7 +194,7 @@ class LeanMeterView @JvmOverloads constructor(
         val barHalf = 1.5f * density
         rect.set(cx - barHalf, top, cx + barHalf, top + ledH)
         if (straight) {
-            ledPaint.color = colorGreen
+            ledPaint.color = if (valid) colorGreen else colorInvalid
             ledPaint.alpha = 60
             val halo = 2.5f * density
             canvas.drawRoundRect(
@@ -196,7 +210,7 @@ class LeanMeterView @JvmOverloads constructor(
         if (showScale) {
             // Escala bajo los LEDs: 50 · 25 · 0 · 25 · 50 (el 0 se ilumina al ir recto)
             val labelY = top + ledH + labelH - 2 * density
-            zeroPaint.color = if (straight) colorGreen else labelPaint.color
+            zeroPaint.color = if (straight) (if (valid) colorGreen else colorInvalid) else labelPaint.color
             canvas.drawText("0", cx, labelY, zeroPaint)
             for (deg in intArrayOf(25, 50)) {
                 val i = (deg / step).toInt() - 1
