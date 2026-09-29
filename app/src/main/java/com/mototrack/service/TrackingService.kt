@@ -135,6 +135,8 @@ class TrackingService : Service(), SensorEventListener {
         // suaviza limitando cuánto puede moverse por fix (a 1 Hz, ~5 m/s ya es mucho)
         private const val ALT_MAX_VERTICAL_ACCURACY_M = 12f
         private const val ALT_MAX_STEP_M = 5.0
+        // Fixes seguidos con la altitud cruda exactamente igual para darla por congelada
+        private const val FROZEN_ALT_MIN_FIXES = 5
         private const val ALT_SMOOTHING = 0.3
 
         // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
@@ -283,6 +285,9 @@ class TrackingService : Service(), SensorEventListener {
     private var lastGpsAlt = 0.0
     // Altura filtrada (NaN hasta el primer fix de la ruta)
     private var altFiltered = Double.NaN
+    // Altitud cruda del último fix y cuántos seguidos la repitieron exacta (altura congelada)
+    private var lastRawAltitude = Double.NaN
+    private var rawAltitudeRepeats = 0
     // Satélites usados en el fix, del GnssStatus (Location.extras no lo trae de forma fiable)
     @Volatile private var satellitesUsed = 0
     private val gnssCallback = object : GnssStatus.Callback() {
@@ -582,7 +587,24 @@ class TrackingService : Service(), SensorEventListener {
         val raw = msl.of(location)
         if (altFiltered.isNaN()) {
             altFiltered = raw
+            lastRawAltitude = location.altitude
+            rawAltitudeRepeats = 0
             return raw
+        }
+        // Al empezar, el sistema repite la última altitud que conocía durante uno o dos minutos
+        // (aunque la moto ya ruede) hasta que hay una altura GPS real. Esa primera altura real
+        // llega de golpe, con decenas de metros de salto: se acepta tal cual y no se suaviza como
+        // un cambio normal, o la altura iría con retraso durante otros 40 s
+        if (location.altitude == lastRawAltitude) {
+            rawAltitudeRepeats++
+        } else {
+            val wasFrozen = rawAltitudeRepeats >= FROZEN_ALT_MIN_FIXES
+            rawAltitudeRepeats = 0
+            lastRawAltitude = location.altitude
+            if (wasFrozen) {
+                altFiltered = raw
+                return raw
+            }
         }
         val poorVertical = location.hasVerticalAccuracy() &&
             location.verticalAccuracyMeters > ALT_MAX_VERTICAL_ACCURACY_M

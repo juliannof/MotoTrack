@@ -3,6 +3,7 @@ package com.mototrack.ui
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import android.location.Location
 import android.os.Bundle
 import android.view.*
 import android.widget.Toast
@@ -194,8 +195,9 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             binding.tvAvgSpeed.text  = String.format("%.0f km/h", route.avgSpeedKmh)
             binding.tvSpeedChartMax.text = String.format("▲ MÁXIMA · %.0f km/h", route.maxSpeedKmh)
             binding.tvSpeedChartAvg.text = String.format("MEDIA · %.0f km/h", route.avgSpeedKmh)
-            binding.tvLeanChartLeft.text = String.format("◀ IZQUIERDA · %.0f°", route.maxLeanLeft)
-            binding.tvLeanChartRight.text = String.format("DERECHA · %.0f° ▶", route.maxLeanRight)
+            // En el gráfico la izquierda va arriba y la derecha abajo (setupLeanChart)
+            binding.tvLeanChartLeft.text = String.format("▲ IZQUIERDA · %.0f°", route.maxLeanLeft)
+            binding.tvLeanChartRight.text = String.format("▼ DERECHA · %.0f°", route.maxLeanRight)
             binding.tvMaxLean.text   = String.format("I %.1f° · D %.1f°", route.maxLeanLeft, route.maxLeanRight)
             binding.tvMaxAccel.text  = String.format("%.2f m/s²", route.maxAcceleration)
             routeDistanceKm = route.distanceKm
@@ -267,7 +269,11 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             String.format("%d:%02d", s / 60, s % 60)
         }
         // La altitud GPS es ruidosa: media móvil corta para que el perfil se lea
-        val elevation = movingAverage(points.map { it.altitude.toFloat() }, 3)
+        val altitude = altitudeProfile(points)
+        val elevation = movingAverage(altitude.values, 3)
+        // Máxima y mínima del perfil que se dibuja: sin los picos sueltos de la altitud GPS
+        binding.tvElevationMax.text = String.format("▲ MÁXIMA · %.0f m", elevation.max())
+        binding.tvElevationMin.text = String.format("▼ MÍNIMA · %.0f m", elevation.min())
         // La velocidad real sube y baja cada pocos segundos (curvas, frenadas) y a 1 muestra/s el
         // gráfico parecía un electro: media de unos 9 s. El pico dibujado queda algo por debajo de
         // la velocidad máxima de la ficha, que sale de las muestras sin suavizar
@@ -280,6 +286,83 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
         )
         setupAccelLevelsChart(points)
+        showEstimatedAltitude(elevation, altitude.estimatedUntil, points, time)
+    }
+
+    /**
+     * Altura de la ruta. Al empezar, el sistema repite la última altitud que conocía durante un
+     * minuto o dos (se ha visto de 69 a 106 s en las rutas de casa al colegio, con la moto ya
+     * rodando y una precisión vertical de 1-3 m que no era cierta) hasta que hay una altura GPS
+     * real. Ese tramo inicial se estima interpolando por distancia recorrida entre la altura de
+     * salida y la primera real. Si la moto estuvo parada, la altura constante es legítima y no se
+     * toca. [estimatedUntil] es el nº de puntos estimados (0 = ninguno).
+     */
+    private class AltitudeProfile(val values: List<Float>, val estimatedUntil: Int)
+
+    private fun altitudeProfile(points: List<RoutePoint>): AltitudeProfile {
+        // Se parte de la altura GPS cruda (elipsoide + geoide) y no de la guardada, que el filtro
+        // del servicio suavizaba con retraso: la primera altura real llega de golpe (54 m de salto
+        // en una ruta) y el filtro la convertía en una rampa de otros 40 s. El geoide (MSL menos
+        // elipsoide) es casi constante: la mediana de la segunda mitad, ya asentado el filtro.
+        val geoid = points.drop(points.size / 2).map { it.altitude - it.altitudeEllipsoid }
+            .sorted().let { it[it.size / 2] }
+        // Un fix con mala precisión vertical arrastra el último bueno, como en el servicio
+        var last = (points.first().altitudeEllipsoid + geoid).toFloat()
+        val raw = points.map { p ->
+            if (p.vdop > POOR_VERTICAL_ACCURACY_M) last
+            else { last = (p.altitudeEllipsoid + geoid).toFloat(); last }
+        }
+        val startRaw = points.first().altitudeEllipsoid
+        val end = points.indexOfFirst { abs(it.altitudeEllipsoid - startRaw) > FROZEN_ALT_TOLERANCE_M }
+        if (end < FROZEN_ALT_MIN_POINTS) return AltitudeProfile(raw, 0)
+        // Distancia recorrida en el tramo congelado (sin contar puntos sin posición)
+        val cum = FloatArray(end + 1)
+        val result = FloatArray(1)
+        for (i in 1..end) {
+            val a = points[i - 1]
+            val b = points[i]
+            val valid = (a.latitude != 0.0 || a.longitude != 0.0) && (b.latitude != 0.0 || b.longitude != 0.0)
+            if (valid) Location.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude, result)
+            cum[i] = cum[i - 1] + if (valid) result[0] else 0f
+        }
+        if (cum[end] < FROZEN_ALT_MIN_DISTANCE_M) return AltitudeProfile(raw, 0)   // parado: es real
+        val estimated = raw.toMutableList()
+        for (i in 0 until end) estimated[i] = raw[0] + (raw[end] - raw[0]) * (cum[i] / cum[end])
+        return AltitudeProfile(estimated, end)
+    }
+
+    /**
+     * Dibuja el tramo de altura estimado en discontinuo y más apagado, y lo avisa debajo del
+     * título: es una estimación, no una lectura.
+     */
+    private fun showEstimatedAltitude(
+        elevation: List<Float>, estimatedUntil: Int, points: List<RoutePoint>, time: (Int) -> String
+    ) {
+        val note = binding.tvElevationNote
+        if (estimatedUntil <= 0) { note.visibility = View.GONE; return }
+        val chart = binding.chartElevation
+        val data = chart.data ?: return
+        val real = data.getDataSetByIndex(0) as? LineDataSet ?: return
+        repeat(estimatedUntil) { real.removeFirst() }   // el sólido empieza donde hay lectura real
+        val color = Color.parseColor("#B39DDB")
+        val estimated = LineDataSet(
+            (0..estimatedUntil).map { Entry(it.toFloat(), elevation[it]) }, "Estimada"
+        ).apply {
+            this.color = color
+            setDrawCircles(false)
+            lineWidth = 2f
+            enableDashedLine(14f, 9f, 0f)
+            setDrawFilled(true)
+            fillColor = color
+            fillAlpha = 30
+            setDrawValues(false)
+        }
+        data.addDataSet(estimated)
+        data.notifyDataChanged()
+        chart.notifyDataSetChanged()
+        chart.invalidate()
+        note.text = "Trazo discontinuo: altura estimada. El GPS no dio altura real en los primeros ${time(estimatedUntil)}."
+        note.visibility = View.VISIBLE
     }
 
     /**
@@ -301,12 +384,13 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             return chart
         }
         val lean = movingAverage(points.drop(first).map { it.leanAngle }, LEAN_SMOOTHING_RADIUS)
-        setupChart(chart, lean, "Ángulo lateral", "°", "%.1f", "#FF5722", time, startIndex = first)
+        setupChart(chart, lean, "Ángulo lateral", "°", "%.1f", "#FF5722", time, startIndex = first, invertY = true)
         chart.xAxis.axisMinimum = 0f
         chart.xAxis.axisMaximum = (points.size - 1).toFloat()
         // El 0 (moto nivelada) marcado como un horizonte: línea blanca gruesa, detrás de la traza,
         // y en el centro del gráfico: eje simétrico, con el mismo margen a izquierda y a derecha
-        val range = ceil(lean.maxOf { abs(it) } / 10f).coerceAtLeast(1f) * 10f
+        // (redondeado a 5° para no dejar margen de sobra: la traza aprovecha toda la altura)
+        val range = ceil(lean.maxOf { abs(it) } / 5f).coerceAtLeast(1f) * 5f
         chart.axisLeft.apply {
             axisMinimum = -range
             axisMaximum = range
@@ -412,10 +496,15 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         chart: LineChart, values: List<Float>, label: String, unit: String, format: String,
         colorHex: String, time: (Int) -> String,
         // Índice de muestra de values[0]: si no es 0, el gráfico empieza más tarde
-        startIndex: Int = 0
+        startIndex: Int = 0,
+        // Dibuja los valores al revés (positivo hacia abajo): en la inclinación, la derecha va
+        // abajo. El eje va sin signo y el marcador al tocar sigue mostrando el valor real
+        invertY: Boolean = false
     ): LineChart {
         val color = Color.parseColor(colorHex)
-        val dataSet = LineDataSet(values.mapIndexed { i, v -> Entry((i + startIndex).toFloat(), v) }, label).apply {
+        val dataSet = LineDataSet(
+            values.mapIndexed { i, v -> Entry((i + startIndex).toFloat(), if (invertY) -v else v) }, label
+        ).apply {
             this.color = color
             setDrawCircles(false)
             lineWidth = 2f
@@ -434,6 +523,11 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             legend.isEnabled = false
             xAxis.position = XAxis.XAxisPosition.BOTTOM
             axisRight.isEnabled = false
+            if (invertY) {
+                axisLeft.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float) = abs(value).toInt().toString()
+                }
+            }
             // El eje X son muestras: se muestra el tiempo de ruta en lugar del índice
             xAxis.valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float) = time(value.toInt())
@@ -447,7 +541,7 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             isDragEnabled = false
             setMaxHighlightDistance(1000f)
             marker = ChartMarkerView(requireContext()) { e ->
-                "${String.format(format, e.y)} $unit · ${time(e.x.toInt())}"
+                "${String.format(format, if (invertY) -e.y else e.y)} $unit · ${time(e.x.toInt())}"
             }
             setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                 override fun onValueSelected(e: Entry, h: Highlight) = selectSample(e.x.toInt(), chart)
@@ -557,6 +651,13 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         // Centro por defecto cuando la ruta no tiene puntos (península ibérica)
         private val DEFAULT_LOCATION = LatLng(40.4168, -3.7038)
         private const val DEFAULT_ZOOM = 5f
+        // Altura congelada al empezar: la altitud GPS cruda no cambia más que esto durante N puntos
+        // seguidos, y la moto se ha movido al menos esa distancia
+        private const val FROZEN_ALT_TOLERANCE_M = 0.05
+        private const val FROZEN_ALT_MIN_POINTS = 5
+        private const val FROZEN_ALT_MIN_DISTANCE_M = 150f
+        // Precisión vertical peor que esto: el fix no se usa para la altura (como en el servicio)
+        private const val POOR_VERTICAL_ACCURACY_M = 12f
         // Muestras a cada lado en la media del gráfico de velocidad (4 + 1 + 4 = ~9 s a 1 muestra/s)
         private const val SPEED_SMOOTHING_RADIUS = 4
         // Y en el de inclinación (2 + 1 + 2 = ~5 s)
