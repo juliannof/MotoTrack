@@ -29,6 +29,7 @@ import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
+import com.mototrack.utils.AccelEventCounter
 import com.mototrack.utils.CurveCounter
 import com.mototrack.utils.HeatTrail
 import com.mototrack.R
@@ -248,6 +249,71 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             setupChart(binding.chartLean, points.map { it.leanAngle }, "Ángulo lateral", "°", "%.1f", "#FF5722", time),
             setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
         )
+        setupAccelLevelsChart(points)
+    }
+
+    /**
+     * Cuántas aceleraciones y frenadas hubo de cada nivel (los del vúmetro): 4 barras de
+     * aceleración, un hueco y 4 de frenada, con el color de su LED y el conteo encima.
+     */
+    private fun setupAccelLevelsChart(points: List<RoutePoint>) {
+        val chart = binding.chartAccelLevels
+        if (points.all { it.longAccel == 0f }) {
+            chart.clear()
+            chart.setNoDataText("Sin aceleración: ruta grabada antes de guardarla")
+            chart.setNoDataTextColor(Color.parseColor("#888888"))
+            chart.invalidate()
+            binding.tvAccelEventsUp.text = ""
+            binding.tvAccelEventsDown.text = ""
+            return
+        }
+        val counts = AccelEventCounter.count(points)
+        binding.tvAccelEventsUp.text = "▲ ACELERACIONES · ${counts.totalAccel}"
+        binding.tvAccelEventsDown.text = "▼ FRENADAS · ${counts.totalBrake}"
+
+        val levelColors = intArrayOf(
+            Color.parseColor("#8BC34A"), Color.parseColor("#FFC107"),
+            Color.parseColor("#FF5722"), Color.parseColor("#F44336"))   // como los LEDs del vúmetro
+        val levelNames = arrayOf("Leve", "Normal", "Fuerte", "Muy f.")
+        // Posiciones 0-3 aceleración, 4 hueco, 5-8 frenada
+        val entries = ArrayList<BarEntry>()
+        val colors = ArrayList<Int>()
+        for (i in 0 until AccelEventCounter.LEVELS) { entries.add(BarEntry(i.toFloat(), counts.accel[i].toFloat())); colors.add(levelColors[i]) }
+        for (i in 0 until AccelEventCounter.LEVELS) { entries.add(BarEntry((i + 5).toFloat(), counts.brake[i].toFloat())); colors.add(levelColors[i]) }
+        val set = BarDataSet(entries, "Eventos").apply {
+            setColors(colors)
+            valueTextColor = Color.WHITE
+            valueTextSize = 12f
+            valueFormatter = object : ValueFormatter() {
+                override fun getBarLabel(barEntry: BarEntry) = if (barEntry.y > 0f) barEntry.y.toInt().toString() else ""
+            }
+        }
+        chart.apply {
+            data = BarData(set).apply { barWidth = 0.8f }
+            description.isEnabled = false
+            legend.isEnabled = false
+            axisRight.isEnabled = false
+            axisLeft.isEnabled = false
+            axisLeft.axisMinimum = 0f
+            xAxis.apply {
+                position = XAxis.XAxisPosition.BOTTOM
+                setDrawGridLines(false)
+                textColor = Color.parseColor("#B0B0B0")
+                granularity = 1f
+                labelCount = 9
+                axisMinimum = -0.5f
+                axisMaximum = 8.5f
+                valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val i = value.toInt()
+                        return when (i) { in 0..3 -> levelNames[i]; in 5..8 -> levelNames[i - 5]; else -> "" }
+                    }
+                }
+            }
+            setTouchEnabled(false)
+            setFitBars(true)
+            invalidate()
+        }
     }
 
     /**
