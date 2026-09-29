@@ -192,6 +192,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             binding.tvAvgSpeed.text  = String.format("%.0f km/h", route.avgSpeedKmh)
             binding.tvSpeedChartMax.text = String.format("▲ MÁXIMA · %.0f km/h", route.maxSpeedKmh)
             binding.tvSpeedChartAvg.text = String.format("MEDIA · %.0f km/h", route.avgSpeedKmh)
+            binding.tvLeanChartLeft.text = String.format("◀ IZQUIERDA · %.0f°", route.maxLeanLeft)
+            binding.tvLeanChartRight.text = String.format("DERECHA · %.0f° ▶", route.maxLeanRight)
             binding.tvMaxLean.text   = String.format("I %.1f° · D %.1f°", route.maxLeanLeft, route.maxLeanRight)
             binding.tvMaxAccel.text  = String.format("%.2f m/s²", route.maxAcceleration)
             routeDistanceKm = route.distanceKm
@@ -272,10 +274,36 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         // Orden fijo: velocidad, ángulo lateral, altura del terreno
         charts = listOf(
             setupChart(binding.chartSpeed, speed, "Velocidad", "km/h", "%.0f", "#00BCD4", time),
-            setupChart(binding.chartLean, points.map { it.leanAngle }, "Ángulo lateral", "°", "%.1f", "#FF5722", time),
+            setupLeanChart(points, time),
             setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
         )
         setupAccelLevelsChart(points)
+    }
+
+    /**
+     * Inclinación lateral. Hasta la primera calibración de la ruta (más de 200 m en recto) la
+     * inclinación guardada es 0 y no es un dato: ese tramo inicial no se dibuja, en vez de pintar
+     * una recta plana que parece conducción en línea recta. El eje sigue empezando en 0:00, como
+     * el resto de gráficos, y el hueco se ve como un hueco. Suavizado con menos ventana que la
+     * velocidad: una curva dura pocos segundos y con más media se aplanaría; los máximos a
+     * izquierda y derecha se indican aparte, sin suavizar.
+     */
+    private fun setupLeanChart(points: List<RoutePoint>, time: (Int) -> String): LineChart {
+        val chart = binding.chartLean
+        val first = points.indexOfFirst { it.leanAngle != 0f }
+        if (first < 0) {
+            chart.clear()
+            chart.setNoDataText("Sin inclinación válida en esta ruta")
+            chart.setNoDataTextColor(Color.parseColor("#888888"))
+            chart.invalidate()
+            return chart
+        }
+        val lean = movingAverage(points.drop(first).map { it.leanAngle }, LEAN_SMOOTHING_RADIUS)
+        setupChart(chart, lean, "Ángulo lateral", "°", "%.1f", "#FF5722", time, startIndex = first)
+        chart.xAxis.axisMinimum = 0f
+        chart.xAxis.axisMaximum = (points.size - 1).toFloat()
+        chart.invalidate()
+        return chart
     }
 
     /** Media móvil centrada con [radius] muestras a cada lado (en los bordes, las que haya). */
@@ -367,10 +395,12 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupChart(
         chart: LineChart, values: List<Float>, label: String, unit: String, format: String,
-        colorHex: String, time: (Int) -> String
+        colorHex: String, time: (Int) -> String,
+        // Índice de muestra de values[0]: si no es 0, el gráfico empieza más tarde
+        startIndex: Int = 0
     ): LineChart {
         val color = Color.parseColor(colorHex)
-        val dataSet = LineDataSet(values.mapIndexed { i, v -> Entry(i.toFloat(), v) }, label).apply {
+        val dataSet = LineDataSet(values.mapIndexed { i, v -> Entry((i + startIndex).toFloat(), v) }, label).apply {
             this.color = color
             setDrawCircles(false)
             lineWidth = 2f
@@ -514,6 +544,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         private const val DEFAULT_ZOOM = 5f
         // Muestras a cada lado en la media del gráfico de velocidad (4 + 1 + 4 = ~9 s a 1 muestra/s)
         private const val SPEED_SMOOTHING_RADIUS = 4
+        // Y en el de inclinación (2 + 1 + 2 = ~5 s)
+        private const val LEAN_SMOOTHING_RADIUS = 2
         private const val SINGLE_POINT_ZOOM = 16f
         private const val MAP_PADDING_PX = 80
     }

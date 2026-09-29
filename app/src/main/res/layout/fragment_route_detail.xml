@@ -240,6 +240,23 @@
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Ángulo lateral" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <!-- Inclinación máxima a cada lado (de las muestras reales: el gráfico va suavizado) -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="2dp">
+            <TextView
+                android:id="@+id/tv_lean_chart_left"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <TextView
+                android:id="@+id/tv_lean_chart_right"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+        </LinearLayout>
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/chart_lean"
             android:layout_width="match_parent"
