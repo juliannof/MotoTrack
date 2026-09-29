@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
 
         // Con el DrawerLayout en la config, la barra superior muestra la hamburguesa
         appBarConfig = AppBarConfiguration(
-            setOf(R.id.nav_dashboard, R.id.nav_history), binding.drawerLayout
+            setOf(R.id.nav_dashboard, R.id.nav_history, R.id.nav_moto), binding.drawerLayout
         )
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(false)   // el título va centrado en toolbar_title
