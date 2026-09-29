@@ -31,6 +31,7 @@ import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import kotlin.math.abs
+import kotlin.math.ceil
 import com.mototrack.utils.AccelEventCounter
 import com.mototrack.utils.CurveCounter
 import com.mototrack.utils.DrivingStyle
@@ -303,8 +304,12 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         setupChart(chart, lean, "Ángulo lateral", "°", "%.1f", "#FF5722", time, startIndex = first)
         chart.xAxis.axisMinimum = 0f
         chart.xAxis.axisMaximum = (points.size - 1).toFloat()
-        // El 0 (moto nivelada) marcado como un horizonte: línea blanca gruesa, detrás de la traza
+        // El 0 (moto nivelada) marcado como un horizonte: línea blanca gruesa, detrás de la traza,
+        // y en el centro del gráfico: eje simétrico, con el mismo margen a izquierda y a derecha
+        val range = ceil(lean.maxOf { abs(it) } / 10f).coerceAtLeast(1f) * 10f
         chart.axisLeft.apply {
+            axisMinimum = -range
+            axisMaximum = range
             removeAllLimitLines()
             addLimitLine(LimitLine(0f).apply {
                 lineWidth = 3f
