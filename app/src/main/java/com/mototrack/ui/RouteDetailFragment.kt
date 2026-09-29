@@ -31,6 +31,7 @@ import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
 import com.mototrack.utils.AccelEventCounter
 import com.mototrack.utils.CurveCounter
+import com.mototrack.utils.DrivingStyle
 import com.mototrack.utils.HeatTrail
 import com.mototrack.R
 import com.mototrack.data.RoutePoint
@@ -53,6 +54,7 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
     // y pintamos cuando estén los dos. Se anulan en onDestroyView.
     private var googleMap: GoogleMap? = null
     private var routePoints: List<RoutePoint>? = null
+    private var routeDistanceKm = 0f
 
     // Selección en las gráficas: se refleja en todas y en un marcador del mapa
     private var selectionMarker: Marker? = null
@@ -189,6 +191,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             binding.tvAvgSpeed.text  = String.format("%.0f km/h", route.avgSpeedKmh)
             binding.tvMaxLean.text   = String.format("I %.1f° · D %.1f°", route.maxLeanLeft, route.maxLeanRight)
             binding.tvMaxAccel.text  = String.format("%.2f m/s²", route.maxAcceleration)
+            routeDistanceKm = route.distanceKm
+            showDrivingStyle()
 
             val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
             binding.tvDate.text = sdf.format(Date(route.startTime))
@@ -208,12 +212,36 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             val curves = CurveCounter.count(points)
             binding.tvCurves.text = String.format("%d (I %d · D %d)", curves.total, curves.left, curves.right)
 
+            showDrivingStyle()
+
             // Gráficas
             if (points.isNotEmpty()) setupCharts(points)
 
             // Mapa (si onMapReady aún no llegó, se pintará desde allí)
             renderRouteOnMap()
         }
+    }
+
+    /**
+     * Estilo de conducción y puntuación. Necesita los puntos y los km de la ruta, que llegan por
+     * observers distintos: se llama desde los dos y se pinta cuando ya están los dos.
+     */
+    private fun showDrivingStyle() {
+        val points = routePoints ?: return
+        if (routeDistanceKm <= 0f) return
+        val score = DrivingStyle.score(points, routeDistanceKm)
+        val tv = binding.tvDrivingStyle
+        if (score == null) {
+            tv.text = "—"
+            tv.setTextColor(Color.parseColor("#888888"))
+            return
+        }
+        tv.text = "${score.style.label} · ${score.points}"
+        tv.setTextColor(Color.parseColor(when (score.style) {
+            DrivingStyle.Style.PASEO -> "#8BC34A"
+            DrivingStyle.Style.TOURING -> "#FFC107"
+            DrivingStyle.Style.DEPORTIVA -> "#F44336"
+        }))
     }
 
     /** Manchas de calor de fondo más la línea de colores por velocidad; la leyenda da la máxima de la ruta. */
