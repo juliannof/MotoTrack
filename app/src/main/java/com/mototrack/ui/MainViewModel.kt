@@ -63,6 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val maxLeanLeft   = TrackingService.maxLeanLeft
     val maxLeanRight  = TrackingService.maxLeanRight
     val maxAccel      = TrackingService.maxAccel
+    val maxBrake      = TrackingService.maxBrake
     val distanceKm    = TrackingService.distanceKm
 
     fun startTracking(routeName: String) {

@@ -191,6 +191,7 @@ class TrackingService : Service(), SensorEventListener {
         val maxLeanLeft     = MutableLiveData(0f)
         val maxLeanRight    = MutableLiveData(0f)
         val maxAccel        = MutableLiveData(0f)
+        val maxBrake        = MutableLiveData(0f)    // m/s², en positivo
         val distanceKm      = MutableLiveData(0f)
     }
 
@@ -381,6 +382,7 @@ class TrackingService : Service(), SensorEventListener {
         maxLeanLeft.postValue(0f)
         maxLeanRight.postValue(0f)
         maxAccel.postValue(0f)
+        maxBrake.postValue(0f)
         distanceKm.postValue(0f)
 
         // Crear ruta en DB
@@ -628,6 +630,8 @@ class TrackingService : Service(), SensorEventListener {
         longitudinalAccel.postValue(smoothedAccel)
         // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
         if (smoothedAccel > (maxAccel.value ?: 0f)) maxAccel.postValue(smoothedAccel)
+        // Y la máxima frenada (en positivo), para el resumen del vúmetro al detener
+        if (-smoothedAccel > (maxBrake.value ?: 0f)) maxBrake.postValue(-smoothedAccel)
     }
 
     /**

@@ -191,6 +191,7 @@ class DashboardFragment : Fragment() {
                     ContextCompat.getColor(requireContext(), R.color.stop_red)
                 )
                 binding.recordingIndicator.visibility = View.VISIBLE
+                binding.accelMeter.reset()   // fuera el resumen de la ruta anterior
             } else {
                 binding.btnRecord.text = "▶ INICIAR RUTA"
                 binding.btnRecord.setBackgroundColor(
@@ -274,6 +275,7 @@ class DashboardFragment : Fragment() {
     private fun resetUI() {
         binding.tvSpeed.text = "0"
         binding.accelMeter.reset()
+        binding.accelMeter.showSummary(viewModel.maxAccel.value ?: 0f, viewModel.maxBrake.value ?: 0f)
         binding.leanMeter.reset()
     }
 

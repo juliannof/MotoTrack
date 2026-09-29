@@ -48,6 +48,10 @@ class AccelMeterView @JvmOverloads constructor(
     private var peakDown = 0f
     private var peakUpAtMs = 0L
     private var peakDownAtMs = 0L
+    // Modo resumen (ruta parada): niveles máximos de la ruta en vez de la aceleración en vivo
+    private var summary = false
+    private var summaryUp = 0f
+    private var summaryDown = 0f
 
     private val density = resources.displayMetrics.density
     private val ledPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -91,6 +95,18 @@ class AccelMeterView @JvmOverloads constructor(
         peakDown = 0f
         peakUpAtMs = 0L
         peakDownAtMs = 0L
+        summary = false
+        invalidate()
+    }
+
+    /**
+     * Resumen de la ruta al detener: los LEDs quedan encendidos hasta la máxima aceleración
+     * (arriba) y la máxima frenada (abajo), en positivo. `reset()` lo quita al empezar otra ruta.
+     */
+    fun showSummary(maxUp: Float, maxDown: Float) {
+        summary = maxUp > 0f || maxDown > 0f
+        summaryUp = maxUp
+        summaryDown = maxDown
         invalidate()
     }
 
@@ -129,8 +145,8 @@ class AccelMeterView @JvmOverloads constructor(
         val maxWidthScale = widthScale.max()
         val maxLedW = w
 
-        val upLevel = if (accel > 0) accel else 0f
-        val downLevel = if (accel < 0) -accel else 0f
+        val upLevel = if (summary) summaryUp else if (accel > 0) accel else 0f
+        val downLevel = if (summary) summaryDown else if (accel < 0) -accel else 0f
 
         for (side in arrayOf(1, -1)) {   // 1 = arriba (acelera), -1 = abajo (frena)
             val level = if (side > 0) upLevel else downLevel
@@ -172,7 +188,7 @@ class AccelMeterView @JvmOverloads constructor(
         }
 
         // Sin aceleración: barra central iluminada, como "moto recta" en la inclinación
-        val steady = abs(accel) < step / 2
+        val steady = !summary && abs(accel) < step / 2
         val barHalf = 1.5f * density
         rect.set(right - maxLedW * (widthScale[0] / maxWidthScale), cy - barHalf, right, cy + barHalf)
         if (steady) {
