@@ -195,7 +195,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             showDrivingStyle()
 
             val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-            binding.tvDate.text = sdf.format(Date(route.startTime))
+            binding.tvDate.text = sdf.format(Date(route.startTime)) +
+                if (route.motoName.isNotBlank()) " · ${route.motoName}" else ""
 
             if (route.endTime > 0) {
                 val ms = route.endTime - route.startTime

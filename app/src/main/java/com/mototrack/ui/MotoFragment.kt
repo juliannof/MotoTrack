@@ -12,6 +12,7 @@ import android.view.LayoutInflater
 import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Toast
@@ -80,8 +81,22 @@ class MotoFragment : Fragment(), SensorEventListener {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         binding.btnSaveMoto.setOnClickListener {
-            if (saveMoto()) Toast.makeText(requireContext(), "Moto guardada", Toast.LENGTH_SHORT).show()
+            val yearOk = saveMoto()
+            Toast.makeText(
+                requireContext(),
+                if (yearOk) "Moto guardada" else "Moto guardada, pero el año no vale: pon 4 cifras (por ejemplo 2019)",
+                Toast.LENGTH_LONG
+            ).show()
+            // Guardada: se pliega a su resumen (si el año falló se queda el formulario con el aviso)
+            if (yearOk) {
+                (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .hideSoftInputFromWindow(binding.root.windowToken, 0)
+                binding.root.requestFocus()
+                showMoto(editing = false)
+            }
         }
+        binding.btnEditMoto.setOnClickListener { showMoto(editing = true) }
+        showMoto(editing = false)
 
         binding.tvMotoStatus.text = PROMPT
         binding.motoLeanMeter.showScale = false
@@ -111,22 +126,48 @@ class MotoFragment : Fragment(), SensorEventListener {
 
     // ── Datos de la moto ──────────────────────────────────────────────────────
 
-    /** false (y avisa) si el año no es de 4 cifras; vacío vale. */
+    /**
+     * Guarda siempre nombre, marca, modelo y ubicación. Devuelve false si el año no vale (vacío
+     * vale, o 4 cifras entre 1900 y 2100): entonces se conserva el año que ya había guardado, y
+     * en el campo queda el aviso.
+     */
     private fun saveMoto(): Boolean {
         val b = _binding ?: return false
-        val year = b.etMotoYear.text.toString().trim()
-        if (year.isNotEmpty() && year.length != 4) {
-            b.etMotoYear.error = "4 cifras"
-            return false
-        }
+        val typedYear = b.etMotoYear.text.toString().trim()
+        val yearOk = typedYear.isEmpty() || (typedYear.length == 4 && typedYear.toInt() in 1900..2100)
         MotoProfile.save(
             requireContext(),
             MotoProfile.Moto(
                 b.etMotoName.text.toString(), b.etMotoBrand.text.toString(),
-                b.etMotoModel.text.toString(), year, currentMount()
+                b.etMotoModel.text.toString(),
+                if (yearOk) typedYear else MotoProfile.load(requireContext()).year,
+                currentMount()
             )
         )
-        return true
+        b.etMotoYear.error = if (yearOk) null else "Año de 4 cifras, por ejemplo 2019"
+        return yearOk
+    }
+
+    /**
+     * Muestra el resumen de la moto guardada o el formulario. El formulario solo se ve al editar
+     * o mientras no haya ningún dato guardado.
+     */
+    private fun showMoto(editing: Boolean) {
+        val b = _binding ?: return
+        val moto = MotoProfile.load(requireContext())
+        val summary = !editing && !moto.isEmpty
+        b.motoSummary.visibility = if (summary) View.VISIBLE else View.GONE
+        b.motoForm.visibility = if (summary) View.GONE else View.VISIBLE
+        if (!summary) return
+        b.tvMotoSummaryName.text = moto.label.ifBlank { "Mi moto" }
+        val detail = listOf(moto.brand.trim(), moto.model.trim()).filter { it.isNotEmpty() }.joinToString(" ")
+        // Si el nombre ya es la marca y el modelo no se repite debajo
+        b.tvMotoSummaryDetail.text = listOf(
+            detail.takeIf { it.isNotEmpty() && it != moto.label }, moto.year.trim().takeIf { it.isNotEmpty() }
+        ).filterNotNull().joinToString(" · ")
+        b.tvMotoSummaryDetail.visibility = if (b.tvMotoSummaryDetail.text.isEmpty()) View.GONE else View.VISIBLE
+        b.tvMotoSummaryMount.text = if (moto.mount.isEmpty()) "" else "Móvil en: ${moto.mount.lowercase()}"
+        b.tvMotoSummaryMount.visibility = if (moto.mount.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /** Ubicación elegida del móvil, o vacío si no se ha elegido ninguna. */

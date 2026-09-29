@@ -94,7 +94,8 @@ class RouteAdapter(
             val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
             binding.tvRouteName.text = route.name
-            binding.tvDate.text = sdf.format(Date(route.startTime))
+            binding.tvDate.text = sdf.format(Date(route.startTime)) +
+                if (route.motoName.isNotBlank()) " · ${route.motoName}" else ""
             binding.tvDistance.text = String.format("%.2f km", route.distanceKm)
             binding.tvMaxSpeed.text = String.format("Vmax: %.0f km/h", route.maxSpeedKmh)
             binding.tvMaxLean.text  = String.format("Inclinación I %.0f° · D %.0f°", route.maxLeanLeft, route.maxLeanRight)

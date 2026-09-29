@@ -394,6 +394,7 @@ class TrackingService : Service(), SensorEventListener {
             val route = Route(
                 name = routeName,
                 ownerEmail = AuthRepository(this@TrackingService).currentUser() ?: "",
+                motoName = MotoProfile.load(this@TrackingService).label,
                 startTime = System.currentTimeMillis()
             )
             val id = db.routeDao().insertRoute(route)

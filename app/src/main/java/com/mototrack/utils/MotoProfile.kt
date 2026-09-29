@@ -42,6 +42,9 @@ object MotoProfile {
         val name: String, val brand: String, val model: String, val year: String, val mount: String
     ) {
         val isEmpty get() = name.isBlank() && brand.isBlank() && model.isBlank() && year.isBlank() && mount.isBlank()
+
+        /** Cómo se llama la moto en las rutas: el nombre, o marca y modelo si no le has puesto uno. */
+        val label get() = name.trim().ifBlank { "$brand $model".trim() }
     }
 
     data class Calibration(val offsetDeg: Float, val atMs: Long)

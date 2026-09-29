@@ -14,6 +14,9 @@ data class Route(
     val name: String,
     // Correo de la cuenta dueña de la ruta ("" = grabada antes de existir las cuentas)
     val ownerEmail: String = "",
+    // La moto con la que se grabó, tal como se llamaba al empezar ("" = sin indicar o grabada
+    // antes de existir la pantalla Mi moto)
+    val motoName: String = "",
     val startTime: Long,
     val endTime: Long = 0L,
 
