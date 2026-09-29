@@ -14,6 +14,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
 import com.github.mikephil.charting.charts.LineChart
+import com.github.mikephil.charting.components.LimitLine
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
@@ -302,6 +303,15 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         setupChart(chart, lean, "Ángulo lateral", "°", "%.1f", "#FF5722", time, startIndex = first)
         chart.xAxis.axisMinimum = 0f
         chart.xAxis.axisMaximum = (points.size - 1).toFloat()
+        // El 0 (moto nivelada) marcado como un horizonte: línea blanca gruesa, detrás de la traza
+        chart.axisLeft.apply {
+            removeAllLimitLines()
+            addLimitLine(LimitLine(0f).apply {
+                lineWidth = 3f
+                lineColor = Color.WHITE
+            })
+            setDrawLimitLinesBehindData(true)
+        }
         chart.invalidate()
         return chart
     }
