@@ -3,70 +3,149 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="@color/background"
-    android:orientation="vertical">
+    android:padding="6dp">
 
-<ScrollView
-    android:layout_width="match_parent"
-    android:layout_height="0dp"
-    android:layout_weight="1">
-
+    <!-- ═══════════════════════════════════════════
+         ARRIBA — VELOCIDAD E INCLINACIÓN
+    ════════════════════════════════════════════ -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1.1"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:gravity="center">
 
-        <!-- Indicador de grabación -->
-        <LinearLayout
-            android:id="@+id/recording_indicator"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:layout_marginBottom="8dp">
-
-            <View
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:background="@drawable/circle_red" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="GRABANDO"
-                android:textColor="@color/stop_red"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- VELOCIDAD principal -->
+        <!-- VELOCIDAD grande: ocupa todo el alto libre de la columna -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginBottom="6dp"
             app:cardBackgroundColor="@color/surface"
             app:cardCornerRadius="16dp"
             app:strokeColor="@color/card_stroke"
             app:strokeWidth="1dp"
             app:cardElevation="4dp">
 
-            <LinearLayout
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:paddingStart="24dp"
-                android:paddingTop="24dp"
-                android:paddingEnd="100dp"
-                android:paddingBottom="24dp">
+                android:layout_height="match_parent">
 
-                <!-- Dirección de la marcha: punto cardinal y grados -->
+                <!-- El número ocupa toda la tarjeta; las etiquetas van superpuestas
+                     en los bordes, donde el dígito no llega -->
+                <com.mototrack.ui.SpeedDigitsView
+                    android:id="@+id/tv_speed"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="66dp"
+                    android:paddingBottom="48dp"
+                    android:text="0"
+                    android:textColor="@color/text_primary"
+                    android:textStyle="bold"
+                    android:fontFamily="sans-serif-condensed" />
+
+        <com.mototrack.ui.SpeedLimitSignView
+            android:id="@+id/speed_limit_sign"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
+            android:layout_gravity="top|start"
+            android:layout_margin="8dp" />
+
+                <!-- Arriba y centrado con el número: dónde está la moto (urbanización o calle,
+                     como en el nombre de la ruta) -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_gravity="top|center_horizontal"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tv_place"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:maxWidth="170dp"
+                        android:textColor="@color/accent_cyan"
+                        android:textSize="16sp"
+                        android:fontFamily="sans-serif-black"
+                        android:textStyle="bold" />
+
+                    <!-- ¿Va a llover donde estoy? Justo debajo del lugar -->
+                    <TextView
+                        android:id="@+id/tv_rain"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:drawablePadding="6dp"
+                        android:gravity="center_vertical"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+
+                <!-- km/h justo debajo del número, centrado con él -->
+                <TextView
+                    android:id="@+id/tv_speed_unit"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|center_horizontal"
+                    android:layout_marginBottom="8dp"
+                    android:text="km/h"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="16sp" />
+
+                <!-- Velocidad media, abajo a la derecha: mismo estilo que la máxima -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom|end"
+                    android:layout_margin="10dp"
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:paddingBottom="4dp"
+                        android:text="MED"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tv_avg_speed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="0"
+                        android:textColor="@color/text_primary"
+                        android:textSize="30sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="3dp"
+                        android:paddingBottom="4dp"
+                        android:text="km/h"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- Dirección de la marcha: punto cardinal (N, NE, E, SE, S, SO, O, NO) y grados -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="12dp"
                     android:gravity="bottom"
                     android:orientation="horizontal">
 
@@ -76,7 +155,7 @@
                         android:layout_height="wrap_content"
                         android:text="—"
                         android:textColor="@color/text_secondary"
-                        android:textSize="22sp"
+                        android:textSize="30sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -84,298 +163,312 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="4dp"
-                        android:paddingBottom="3dp"
+                        android:paddingBottom="4dp"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
 
-                <!-- Vúmetro de aceleración: vertical, sin número (lo dicen los propios
-                     LEDs), entre la orientación y la velocidad media -->
+                <!-- Vúmetro de aceleración: vertical, alineado a la derecha, entre la
+                     orientación y la velocidad media; sin número, lo dice el propio
+                     vúmetro (cuántos LEDs y hacia qué lado) -->
                 <com.mototrack.ui.AccelMeterView
                     android:id="@+id/accel_meter"
                     android:layout_width="40dp"
-                    android:layout_height="80dp"
-                    android:layout_marginTop="4dp" />
+                    android:layout_height="120dp"
+                    android:layout_gravity="center_vertical|end"
+                    android:layout_marginEnd="12dp" />
 
-                <TextView
-                    android:id="@+id/tv_avg_speed"
+                <!-- Velocidad máxima de la ruta, abajo a la izquierda: número grande y en negrita -->
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:layout_marginBottom="4dp"
-                    android:text="Vmed: 0 km/h"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp" />
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="10dp"
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
 
-                <TextView
-                    android:id="@+id/tv_place"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:textColor="@color/accent_cyan"
-                    android:textSize="15sp"
-                    android:fontFamily="sans-serif-black"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.1"
+                        android:paddingBottom="4dp"
+                        android:text="MÁX"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tv_max_speed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="0"
+                        android:textColor="@color/text_primary"
+                        android:textSize="30sp"
                         android:textStyle="bold" />
 
-                <!-- ¿Va a llover donde estoy? (previsión de las próximas horas) -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="3dp"
+                        android:paddingBottom="4dp"
+                        android:text="km/h"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- Pop-up informativo: la ruta arranca sola al detectar movimiento -->
                 <TextView
-                    android:id="@+id/tv_rain"
+                    android:id="@+id/tv_auto_start_popup"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/text_secondary"
-                    android:drawablePadding="6dp"
-                        android:gravity="center_vertical"
-                        android:textSize="14sp"
-                    android:visibility="gone" />
-
-                <!-- Qué suena ahora (iVoox, Apple Music, la SER…) -->
-                    <com.mototrack.ui.TickerView
-                    android:id="@+id/tv_now_playing"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:visibility="gone" />
-
-                <com.mototrack.ui.SpeedDigitsView
-                    android:id="@+id/tv_speed"
-                    android:layout_width="match_parent"
-                    android:layout_height="120dp"
-                    android:text="0"
+                    android:layout_gravity="center"
+                    android:background="@drawable/popup_bg"
+                    android:gravity="center"
+                    android:paddingStart="24dp"
+                    android:paddingTop="14dp"
+                    android:paddingEnd="24dp"
+                    android:paddingBottom="14dp"
+                    android:text="● Movimiento detectado\nRuta iniciada automáticamente"
                     android:textColor="@color/text_primary"
+                    android:textSize="20sp"
                     android:textStyle="bold"
-                    android:fontFamily="sans-serif-condensed" />
+                    android:visibility="gone" />
 
-                <TextView
-                    android:id="@+id/tv_speed_unit"
+                <!-- Indicador de grabación: justo debajo de la señal del límite -->
+                <LinearLayout
+                    android:id="@+id/recording_indicator"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="km/h"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="18sp" />
-            </LinearLayout>
+                    android:layout_gravity="top|start"
+                    android:layout_marginStart="26dp"
+                    android:layout_marginTop="88dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
 
-        <com.mototrack.ui.SpeedLimitSignView
-            android:id="@+id/speed_limit_sign"
-            android:layout_width="88dp"
-            android:layout_height="88dp"
-            android:layout_gravity="top|end"
-            android:layout_margin="10dp" />
+                    <View
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:background="@drawable/circle_red" />
 
-        <!-- Velocidad máxima de la ruta, abajo a la izquierda: número grande y en negrita -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|start"
-            android:layout_margin="16dp"
-            android:gravity="bottom"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:letterSpacing="0.1"
-                android:paddingBottom="4dp"
-                android:text="MÁX"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/tv_max_speed"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:text="0"
-                android:textColor="@color/text_primary"
-                android:textSize="30sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="3dp"
-                android:paddingBottom="4dp"
-                android:text="km/h"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
-        </LinearLayout>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="REC"
+                        android:textColor="@color/stop_red"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- LEAN ANGLE -->
+        <!-- INCLINACIÓN: ocupa lo que ocupaba el botón (48 dp), bajo la velocidad -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_height="48dp"
             app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="12dp"
             app:strokeColor="@color/card_stroke"
             app:strokeWidth="1dp"
-            app:cardElevation="4dp">
+            app:cardElevation="3dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingStart="16dp"
-                android:paddingTop="10dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="6dp">
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="9dp">
 
-                <!-- Etiqueta y máximo en una fila -->
+                <!-- Vúmetro: izquierda ← 0 → derecha, con el máximo de cada lado marcado -->
+                <com.mototrack.ui.LeanMeterView
+                    android:id="@+id/lean_meter"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1" />
+
+                <!-- Etiqueta (o aviso de calibración) y máximos, a la derecha -->
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/tv_lean_label"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:ellipsize="end"
                         android:letterSpacing="0.1"
-                        android:text="INCLINACIÓN"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        android:maxLines="1"
+                        android:textColor="@color/accent_orange"
+                        android:textSize="10sp"
+                        android:visibility="gone" />
 
-                    <Space
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:layout_weight="1" />
-
-                    <TextView
-                        android:id="@+id/tv_max_lean_title"
+                    <LinearLayout
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:letterSpacing="0.1"
-                        android:text="MÁX "
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp" />
+                        android:orientation="horizontal">
 
-                    <TextView
-                        android:id="@+id/tv_max_lean"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="I 0° · D 0°"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        <TextView
+                            android:id="@+id/tv_max_lean_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:letterSpacing="0.1"
+                            android:text="MÁX "
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
+
+                        <TextView
+                            android:id="@+id/tv_max_lean"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0.0°"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
                 </LinearLayout>
-
-                <!-- Vúmetro: izquierda ← 0 → derecha -->
-                <com.mototrack.ui.LeanMeterView
-                    android:id="@+id/lean_meter"
-                    android:layout_width="match_parent"
-                    android:layout_height="70dp"
-                    android:layout_marginTop="2dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
 
-        <!-- DISTANCIA -->
+    <!-- ═══════════════════════════════════════════
+         ABAJO — MAPA DE FONDO, BOTÓN E INDICADORES SIN MARCO
+    ════════════════════════════════════════════ -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="2dp">
+
         <com.google.android.gms.maps.MapView
             android:id="@+id/dashboard_map"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:visibility="gone" />
-        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="16dp"
-            app:strokeColor="@color/card_stroke"
-            app:strokeWidth="1dp"
-            app:cardElevation="4dp">
+            android:layout_height="match_parent" />
 
-            <LinearLayout
+        <!-- Cortina: tapa el mapa hasta tener un fix GPS preciso y la cámara ya centrada -->
+        <View
+            android:id="@+id/map_cover"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/background" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="36dp"
+            android:orientation="vertical">
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- Distancia y altura en una sola tarjeta traslúcida sobre el mapa -->
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:paddingStart="14dp"
-                android:paddingTop="14dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="12dp">
+                app:cardBackgroundColor="@color/map_card_bg"
+                app:cardCornerRadius="16dp"
+                app:strokeColor="@color/map_card_stroke"
+                app:strokeWidth="1dp"
+                app:cardElevation="0dp">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="DISTANCIA"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp" />
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="10dp">
 
-                <TextView
-                    android:id="@+id/tv_distance"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.00 km"
-                    android:textColor="@color/accent_cyan"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    <!-- DISTANCIA -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="start"
+                        android:orientation="vertical">
 
-        <!-- ALTURA sobre el nivel del mar -->
-        <com.google.android.material.card.MaterialCardView
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:letterSpacing="0.1"
+                            android:text="DISTANCIA"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
+
+                        <TextView
+                            android:id="@+id/tv_distance"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0.00 km"
+                            android:textColor="@color/accent_cyan"
+                            android:textSize="24sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- ALTURA -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:letterSpacing="0.1"
+                            android:text="ALTURA"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="10sp" />
+
+                        <TextView
+                            android:id="@+id/tv_altitude"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="— m"
+                            android:textColor="@color/accent_orange"
+                            android:textSize="24sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+        <!-- Botón INICIO/STOP, abajo a la derecha, en la línea del logo de Google -->
+        <Button
+            android:id="@+id/btn_record"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="16dp"
-            app:strokeColor="@color/card_stroke"
-            app:strokeWidth="1dp"
-            app:cardElevation="4dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:letterSpacing="0.1"
-                    android:text="ALTURA"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp" />
-
-                <TextView
-                    android:id="@+id/tv_altitude"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="— m"
-                    android:textColor="@color/accent_orange"
-                    android:textSize="28sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Puntos grabados -->
-        <TextView
-            android:id="@+id/tv_point_count"
+            android:layout_height="28dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginStart="80dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="3dp"
+            android:backgroundTint="@color/start_green"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
+            android:minWidth="0dp"
+            android:paddingVertical="0dp"
+            android:text="▶ INICIAR RUTA"
+            android:textColor="@android:color/white"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+        <!-- Qué suena ahora (iVoox, Apple Music, la SER…), encima del mapa y entre los dos vúmetros -->
+        <com.mototrack.ui.TickerView
+            android:id="@+id/tv_now_playing"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="0 pts"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp"
-            android:layout_marginBottom="16dp" />
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginStart="76dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginEnd="76dp"
+            android:background="@drawable/bg_now_playing"
+            android:visibility="gone" />
+    </FrameLayout>
 
-    </LinearLayout>
-</ScrollView>
-
-    <!-- Botón INICIO/STOP: fijo abajo, siempre a mano sin tener que hacer scroll -->
-    <Button
-        android:id="@+id/btn_record"
-        android:layout_width="match_parent"
-        android:layout_height="64dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
-        android:backgroundTint="@color/start_green"
-        android:text="▶ INICIAR RUTA"
-        android:textColor="@android:color/white"
-        android:textSize="18sp"
-        android:textStyle="bold" />
 </LinearLayout>

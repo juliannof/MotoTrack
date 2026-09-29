@@ -2,7 +2,6 @@ package com.mototrack.ui
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.provider.Settings
 import android.os.Bundle
 import android.util.Log
@@ -58,10 +57,8 @@ class DashboardFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(requireActivity())[MainViewModel::class.java]
 
-        // En horizontal el vúmetro de inclinación ocupa 48 dp: sin escala numérica
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            binding.leanMeter.showScale = false
-        }
+        // El vúmetro de inclinación ocupa 48 dp: sin escala numérica
+        binding.leanMeter.showScale = false
         setupMap(savedInstanceState)
         setupObservers()
         setupButtons()
@@ -161,11 +158,6 @@ class DashboardFragment : Fragment() {
             binding.tvDistance.text = String.format("%.2f km", km)
         }
 
-        // Conteo de puntos (solo existe en el layout vertical, junto a distancia se quitó)
-        viewModel.pointCount.observe(viewLifecycleOwner) { count ->
-            binding.tvPointCount?.text = "$count pts"
-        }
-
         // Stats máximos
         viewModel.maxSpeed.observe(viewLifecycleOwner) { max ->
             binding.tvMaxSpeed.text = String.format("%.0f", max)
@@ -187,8 +179,7 @@ class DashboardFragment : Fragment() {
         NowPlaying.accessGranted.observe(viewLifecycleOwner) { updateNowPlaying() }
 
         viewModel.avgSpeed.observe(viewLifecycleOwner) { avg ->
-            binding.tvAvgSpeed.text = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) String.format("%.0f", avg)
-                                      else String.format("Vmed: %.0f km/h", avg)
+            binding.tvAvgSpeed.text = String.format("%.0f", avg)
         }
 
         // Estado de grabación → actualizar UI
@@ -210,9 +201,8 @@ class DashboardFragment : Fragment() {
         }
     }
 
-    /** En horizontal no se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
-    private fun leanLabelDefault() =
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) "" else "INCLINACIÓN"
+    /** No se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
+    private fun leanLabelDefault() = ""
 
     private fun showCalibration(status: CalibrationStatus) {
         val label = binding.tvLeanLabel
@@ -228,10 +218,9 @@ class DashboardFragment : Fragment() {
         label.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
         // Mientras se calibra el aviso ocupa toda la fila; el máximo vuelve después
         val calibrating = status == CalibrationStatus.MEASURING
-        // En horizontal los máximos van solo en el gráfico (barrita con su número): sin texto
-        val hideMaxText = calibrating || resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        binding.tvMaxLean.visibility = if (hideMaxText) View.GONE else View.VISIBLE
-        binding.tvMaxLeanTitle.visibility = if (hideMaxText) View.GONE else View.VISIBLE
+        // Los máximos van solo en el gráfico (barrita con su número): sin texto
+        binding.tvMaxLean.visibility = View.GONE
+        binding.tvMaxLeanTitle.visibility = View.GONE
 
         // "Calibrado" y "sin calibrar" se muestran unos segundos y vuelven a la etiqueta normal
         if (status == CalibrationStatus.DONE) {
