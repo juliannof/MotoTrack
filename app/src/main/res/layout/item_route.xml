@@ -81,6 +81,16 @@
                     android:textColor="@color/accent_orange"
                     android:textSize="12sp" />
             </LinearLayout>
+
+            <!-- Estilo de conducción: se rellena cuando se ha calculado -->
+            <TextView
+                android:id="@+id/tv_driving_style"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
         </LinearLayout>
 
         <ImageButton

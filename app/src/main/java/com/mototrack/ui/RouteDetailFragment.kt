@@ -236,12 +236,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             tv.setTextColor(Color.parseColor("#888888"))
             return
         }
-        tv.text = "${score.style.label} · ${score.points}"
-        tv.setTextColor(Color.parseColor(when (score.style) {
-            DrivingStyle.Style.PASEO -> "#8BC34A"
-            DrivingStyle.Style.TOURING -> "#FFC107"
-            DrivingStyle.Style.DEPORTIVA -> "#F44336"
-        }))
+        tv.text = score.text
+        tv.setTextColor(Color.parseColor(score.style.colorHex))
     }
 
     /** Manchas de calor de fondo más la línea de colores por velocidad; la leyenda da la máxima de la ruta. */

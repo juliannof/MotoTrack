@@ -1,5 +1,6 @@
 package com.mototrack.ui
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,6 +11,7 @@ import coil.load
 import coil.transform.RoundedCornersTransformation
 import com.mototrack.data.Route
 import com.mototrack.data.RoutePoint
+import com.mototrack.utils.DrivingStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -22,6 +24,7 @@ import java.util.concurrent.TimeUnit
 class RouteAdapter(
     private val scope: CoroutineScope,
     private val pointsFor: suspend (Long) -> List<RoutePoint>,
+    private val styleFor: suspend (Route) -> DrivingStyle.Score?,
     private val thumbFile: (Long) -> File,
     private val requestThumb: (Long) -> Unit,
     private val onItemClick: (Route) -> Unit,
@@ -67,18 +70,34 @@ class RouteAdapter(
 
         fun clearTrack() {
             loadJob?.cancel()
+            styleJob?.cancel()
             thumb?.setTrack(emptyList())
+        }
+
+        private var styleJob: Job? = null
+
+        /** Estilo de conducción: aparece cuando está calculado (la primera vez lee los puntos de la ruta). */
+        private fun loadStyle(route: Route) {
+            styleJob?.cancel()
+            binding.tvDrivingStyle.visibility = View.GONE
+            styleJob = scope.launch {
+                val score = styleFor(route) ?: return@launch
+                binding.tvDrivingStyle.text = score.text
+                binding.tvDrivingStyle.setTextColor(Color.parseColor(score.style.colorHex))
+                binding.tvDrivingStyle.visibility = View.VISIBLE
+            }
         }
 
         fun bind(route: Route) {
             loadTrack(route)
+            loadStyle(route)
             val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
             binding.tvRouteName.text = route.name
             binding.tvDate.text = sdf.format(Date(route.startTime))
             binding.tvDistance.text = String.format("%.2f km", route.distanceKm)
             binding.tvMaxSpeed.text = String.format("Vmax: %.0f km/h", route.maxSpeedKmh)
-            binding.tvMaxLean.text  = String.format("Lean I %.0f° · D %.0f°", route.maxLeanLeft, route.maxLeanRight)
+            binding.tvMaxLean.text  = String.format("Inclinación I %.0f° · D %.0f°", route.maxLeanLeft, route.maxLeanRight)
 
             // Duración
             if (route.endTime > 0) {

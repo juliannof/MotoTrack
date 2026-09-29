@@ -18,9 +18,14 @@ import kotlin.math.roundToInt
  * comprobar ese umbral. Ajustar aquí con más rutas.
  */
 object DrivingStyle {
-    enum class Style(val label: String) { PASEO("Paseo"), TOURING("Touring"), DEPORTIVA("Deportiva") }
+    /** Colores como los LEDs del vúmetro: verde, ámbar y rojo. */
+    enum class Style(val label: String, val colorHex: String) {
+        PASEO("Paseo", "#8BC34A"), TOURING("Touring", "#FFC107"), DEPORTIVA("Deportiva", "#F44336")
+    }
 
-    class Score(val points: Int, val style: Style)
+    class Score(val points: Int, val style: Style) {
+        val text get() = "${style.label} · $points"
+    }
 
     /** Peso de cada nivel: Leve, Normal, Fuerte, Muy fuerte. */
     private val WEIGHTS = intArrayOf(0, 1, 4, 8)

@@ -78,14 +78,14 @@
                 <!-- Max lean -->
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
                     android:layout_columnWeight="1" android:layout_rowWeight="1">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Max Lean Angle" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Inclinación máx." android:textColor="@color/text_secondary" android:textSize="11sp"/>
                     <TextView android:id="@+id/tv_max_lean" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_orange" android:textSize="20sp" android:textStyle="bold"/>
                 </LinearLayout>
 
                 <!-- Max accel -->
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
                     android:layout_columnWeight="1" android:layout_rowWeight="1">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Max Aceleración" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Aceleración máx." android:textColor="@color/text_secondary" android:textSize="11sp"/>
                     <TextView android:id="@+id/tv_max_accel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_green" android:textSize="20sp" android:textStyle="bold"/>
                 </LinearLayout>
 
