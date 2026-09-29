@@ -71,9 +71,9 @@
                         android:layout_height="wrap_content"
                         android:ellipsize="end"
                         android:maxLines="1"
-                        android:maxWidth="180dp"
+                        android:maxWidth="260dp"
                         android:textColor="@color/accent_cyan"
-                        android:textSize="16sp"
+                        android:textSize="24sp"
                         android:fontFamily="sans-serif-black"
                         android:textStyle="bold" />
 
