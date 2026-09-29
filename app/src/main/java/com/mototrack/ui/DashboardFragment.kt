@@ -11,6 +11,7 @@ import android.widget.EditText
 import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
@@ -322,6 +323,8 @@ class DashboardFragment : Fragment() {
         } catch (e: Exception) { /* estilo no disponible: mapa normal */ }
     }
 
+    private var mapBearing = 0f
+
     private fun moveMap(p: DoubleArray) {
         val map = googleMap ?: return
         applyMapStyle(map, p)
@@ -330,8 +333,13 @@ class DashboardFragment : Fragment() {
         // MAP_FAST_SPEED_KMH: zoom out encuadrando toda la ruta recorrida, hasta que se
         // vuelva a bajar de esa velocidad
         val fast = (viewModel.currentSpeed.value ?: 0f) >= MAP_FAST_SPEED_KMH && trailPoints.size >= 2
+        // La orientación es la de la marcha (rumbo GPS); parado se conserva la última
+        if ((viewModel.currentSpeed.value ?: 0f) >= MAP_BEARING_MIN_KMH) {
+            viewModel.currentBearing.value?.let { mapBearing = it }
+        }
         val camera = (if (fast) routeBoundsCamera() else null)
-            ?: CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
+            ?: CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder().target(LatLng(p[0], p[1])).zoom(MAP_ZOOM).bearing(mapBearing).build())
 
         if (!mapCentered) {
             map.moveCamera(camera); mapCentered = true
@@ -577,7 +585,9 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val KEY_MUSIC_HINT_SEEN = "music_hint_seen"
-        private const val MAP_ZOOM = 16f
+        private const val MAP_ZOOM = 15f
+        // Por debajo de esta velocidad el rumbo del GPS no es fiable: se mantiene el último
+        private const val MAP_BEARING_MIN_KMH = 3f
         // Por encima de esta velocidad el mapa deja de centrar en el punto actual con zoom
         // fijo y pasa a encuadrar toda la ruta recorrida (zoom out), seguido mientras dure
         private const val MAP_FAST_SPEED_KMH = 15f
