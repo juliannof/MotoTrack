@@ -186,6 +186,23 @@
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Velocidad" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <!-- Máxima y media de la ruta (de las muestras reales: el gráfico va suavizado) -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="2dp">
+            <TextView
+                android:id="@+id/tv_speed_chart_max"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <TextView
+                android:id="@+id/tv_speed_chart_avg"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+        </LinearLayout>
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/chart_speed"
             android:layout_width="match_parent"

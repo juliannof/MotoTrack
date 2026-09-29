@@ -190,6 +190,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             binding.tvDistance.text  = String.format("%.2f km", route.distanceKm)
             binding.tvMaxSpeed.text  = String.format("%.0f km/h", route.maxSpeedKmh)
             binding.tvAvgSpeed.text  = String.format("%.0f km/h", route.avgSpeedKmh)
+            binding.tvSpeedChartMax.text = String.format("▲ MÁXIMA · %.0f km/h", route.maxSpeedKmh)
+            binding.tvSpeedChartAvg.text = String.format("MEDIA · %.0f km/h", route.avgSpeedKmh)
             binding.tvMaxLean.text   = String.format("I %.1f° · D %.1f°", route.maxLeanLeft, route.maxLeanRight)
             binding.tvMaxAccel.text  = String.format("%.2f m/s²", route.maxAcceleration)
             routeDistanceKm = route.distanceKm
@@ -261,21 +263,26 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             String.format("%d:%02d", s / 60, s % 60)
         }
         // La altitud GPS es ruidosa: media móvil corta para que el perfil se lea
-        val elevation = points.map { it.altitude.toFloat() }.let { alt ->
-            alt.indices.map { i ->
-                val from = maxOf(0, i - 3); val to = minOf(alt.lastIndex, i + 3)
-                alt.subList(from, to + 1).average().toFloat()
-            }
-        }
+        val elevation = movingAverage(points.map { it.altitude.toFloat() }, 3)
+        // La velocidad real sube y baja cada pocos segundos (curvas, frenadas) y a 1 muestra/s el
+        // gráfico parecía un electro: media de unos 9 s. El pico dibujado queda algo por debajo de
+        // la velocidad máxima de la ficha, que sale de las muestras sin suavizar
+        val speed = movingAverage(points.map { it.speedKmh }, SPEED_SMOOTHING_RADIUS)
 
         // Orden fijo: velocidad, ángulo lateral, altura del terreno
         charts = listOf(
-            setupChart(binding.chartSpeed, points.map { it.speedKmh }, "Velocidad", "km/h", "%.0f", "#00BCD4", time),
+            setupChart(binding.chartSpeed, speed, "Velocidad", "km/h", "%.0f", "#00BCD4", time),
             setupChart(binding.chartLean, points.map { it.leanAngle }, "Ángulo lateral", "°", "%.1f", "#FF5722", time),
             setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
         )
         setupAccelLevelsChart(points)
     }
+
+    /** Media móvil centrada con [radius] muestras a cada lado (en los bordes, las que haya). */
+    private fun movingAverage(values: List<Float>, radius: Int): List<Float> =
+        values.indices.map { i ->
+            values.subList(maxOf(0, i - radius), minOf(values.lastIndex, i + radius) + 1).average().toFloat()
+        }
 
     /**
      * Cuántas aceleraciones y frenadas hubo de cada nivel (los del vúmetro): por cada nivel, una
@@ -505,6 +512,8 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         // Centro por defecto cuando la ruta no tiene puntos (península ibérica)
         private val DEFAULT_LOCATION = LatLng(40.4168, -3.7038)
         private const val DEFAULT_ZOOM = 5f
+        // Muestras a cada lado en la media del gráfico de velocidad (4 + 1 + 4 = ~9 s a 1 muestra/s)
+        private const val SPEED_SMOOTHING_RADIUS = 4
         private const val SINGLE_POINT_ZOOM = 16f
         private const val MAP_PADDING_PX = 80
     }
