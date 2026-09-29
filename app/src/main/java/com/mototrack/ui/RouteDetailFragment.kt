@@ -29,6 +29,7 @@ import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.PolylineOptions
+import kotlin.math.abs
 import com.mototrack.utils.AccelEventCounter
 import com.mototrack.utils.CurveCounter
 import com.mototrack.utils.DrivingStyle
@@ -267,10 +268,9 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
             }
         }
 
-        // Orden fijo: velocidad, aceleración, ángulo lateral, altura del terreno
+        // Orden fijo: velocidad, ángulo lateral, altura del terreno
         charts = listOf(
             setupChart(binding.chartSpeed, points.map { it.speedKmh }, "Velocidad", "km/h", "%.0f", "#00BCD4", time),
-            setupAccelChart(points, time),
             setupChart(binding.chartLean, points.map { it.leanAngle }, "Ángulo lateral", "°", "%.1f", "#FF5722", time),
             setupChart(binding.chartElevation, elevation, "Altura", "m", "%.0f", "#B39DDB", time)
         )
@@ -278,8 +278,10 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
     }
 
     /**
-     * Cuántas aceleraciones y frenadas hubo de cada nivel (los del vúmetro): 4 barras de
-     * aceleración, un hueco y 4 de frenada, con el color de su LED y el conteo encima.
+     * Cuántas aceleraciones y frenadas hubo de cada nivel (los del vúmetro): por cada nivel, una
+     * barra de aceleración hacia arriba y otra de frenada hacia abajo, con el color de su LED y
+     * el conteo junto a la barra. Las rutas grabadas antes de guardar la aceleración (todo a 0)
+     * no tienen dato: se avisa en vez de dibujar un gráfico vacío.
      */
     private fun setupAccelLevelsChart(points: List<RoutePoint>) {
         val chart = binding.chartAccelLevels
@@ -296,65 +298,63 @@ class RouteDetailFragment : Fragment(), OnMapReadyCallback {
         binding.tvAccelEventsUp.text = "▲ ACELERACIONES · ${counts.totalAccel}"
         binding.tvAccelEventsDown.text = "▼ FRENADAS · ${counts.totalBrake}"
 
-        val levelColors = intArrayOf(
+        val levelColors = listOf(
             Color.parseColor("#8BC34A"), Color.parseColor("#FFC107"),
             Color.parseColor("#FF5722"), Color.parseColor("#F44336"))   // como los LEDs del vúmetro
-        val levelNames = arrayOf("Leve", "Normal", "Fuerte", "Muy f.")
-        // Posiciones 0-3 aceleración, 4 hueco, 5-8 frenada
-        val entries = ArrayList<BarEntry>()
-        val colors = ArrayList<Int>()
-        for (i in 0 until AccelEventCounter.LEVELS) { entries.add(BarEntry(i.toFloat(), counts.accel[i].toFloat())); colors.add(levelColors[i]) }
-        for (i in 0 until AccelEventCounter.LEVELS) { entries.add(BarEntry((i + 5).toFloat(), counts.brake[i].toFloat())); colors.add(levelColors[i]) }
-        val set = BarDataSet(entries, "Eventos").apply {
-            setColors(colors)
-            valueTextColor = Color.WHITE
-            valueTextSize = 12f
-            valueFormatter = object : ValueFormatter() {
-                override fun getBarLabel(barEntry: BarEntry) = if (barEntry.y > 0f) barEntry.y.toInt().toString() else ""
+        val levelNames = arrayOf("Leve", "Normal", "Fuerte", "Muy fuerte")
+        val levels = 0 until AccelEventCounter.LEVELS
+
+        // Las frenadas van en negativo (hacia abajo); las dos series comparten posición en X
+        fun dataSet(values: List<Float>, label: String) =
+            BarDataSet(levels.map { BarEntry(it.toFloat(), values[it]) }, label).apply {
+                colors = levelColors
+                valueTextColor = Color.WHITE
+                valueTextSize = 12f
+                valueFormatter = object : ValueFormatter() {
+                    override fun getBarLabel(barEntry: BarEntry) =
+                        if (barEntry.y != 0f) abs(barEntry.y).toInt().toString() else ""
+                }
             }
+        val accelSet = dataSet(levels.map { counts.accel[it].toFloat() }, "Aceleraciones")
+        // Las de frenada, algo más apagadas: en el nivel Leve las dos barras se tocan en el cero y
+        // del mismo color parecerían una sola
+        val brakeSet = dataSet(levels.map { -counts.brake[it].toFloat() }, "Frenadas").apply {
+            colors = levelColors.map { Color.argb(150, Color.red(it), Color.green(it), Color.blue(it)) }
         }
+        // Margen por arriba y por abajo para que quepan los números de las barras más altas
+        val peak = maxOf(1, counts.accel.max(), counts.brake.max()) * 1.25f
+
         chart.apply {
-            data = BarData(set).apply { barWidth = 0.8f }
+            data = BarData(accelSet, brakeSet).apply { barWidth = 0.7f }
             description.isEnabled = false
             legend.isEnabled = false
             axisRight.isEnabled = false
-            axisLeft.isEnabled = false
-            axisLeft.axisMinimum = 0f
+            axisLeft.apply {
+                // Sin números en el eje: cada barra lleva el suyo. Solo la línea del cero
+                setDrawLabels(false)
+                setDrawGridLines(false)
+                setDrawAxisLine(false)
+                setDrawZeroLine(true)
+                zeroLineColor = Color.parseColor("#666666")
+                zeroLineWidth = 1f
+                axisMinimum = -peak
+                axisMaximum = peak
+            }
             xAxis.apply {
                 position = XAxis.XAxisPosition.BOTTOM
                 setDrawGridLines(false)
                 textColor = Color.parseColor("#B0B0B0")
                 granularity = 1f
-                labelCount = 9
+                labelCount = AccelEventCounter.LEVELS
                 axisMinimum = -0.5f
-                axisMaximum = 8.5f
+                axisMaximum = AccelEventCounter.LEVELS - 0.5f
                 valueFormatter = object : ValueFormatter() {
-                    override fun getFormattedValue(value: Float): String {
-                        val i = value.toInt()
-                        return when (i) { in 0..3 -> levelNames[i]; in 5..8 -> levelNames[i - 5]; else -> "" }
-                    }
+                    override fun getFormattedValue(value: Float) = levelNames.getOrElse(value.toInt()) { "" }
                 }
             }
             setTouchEnabled(false)
-            setFitBars(true)
             invalidate()
         }
-    }
-
-    /**
-     * Aceleración en el sentido de la marcha. Las rutas grabadas antes de guardarla
-     * (todo a 0) no tienen dato: se avisa en vez de dibujar una línea plana.
-     */
-    private fun setupAccelChart(points: List<RoutePoint>, time: (Int) -> String): LineChart {
-        val chart = binding.chartAccel
-        if (points.all { it.longAccel == 0f }) {
-            chart.clear()
-            chart.setNoDataText("Sin aceleración: ruta grabada antes de guardarla")
-            chart.setNoDataTextColor(Color.parseColor("#888888"))
-            chart.invalidate()
-            return chart
-        }
-        return setupChart(chart, points.map { it.longAccel }, "Aceleración", "m/s²", "%+.1f", "#8BC34A", time)
     }
 
     @SuppressLint("ClickableViewAccessibility")

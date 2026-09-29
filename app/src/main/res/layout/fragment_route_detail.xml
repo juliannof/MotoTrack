@@ -194,38 +194,29 @@
             android:background="@color/surface"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Aceleración" android:textColor="@color/text_primary"
-            android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <com.github.mikephil.charting.charts.LineChart
-            android:id="@+id/chart_accel"
-            android:layout_width="match_parent"
-            android:layout_height="160dp"
-            android:layout_marginBottom="16dp"
-            android:background="@color/surface"/>
-
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Aceleraciones y frenadas" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <!-- Rótulos de cada grupo de barras: 4 de aceleración, hueco, 4 de frenada (pesos 4-1-4) -->
+        <!-- Totales: aceleraciones arriba (izquierda) y frenadas abajo (derecha), como en las barras -->
         <LinearLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="horizontal" android:layout_marginBottom="2dp">
             <TextView
                 android:id="@+id/tv_accel_events_up"
                 android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="4" android:gravity="center"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
                 android:textColor="@color/text_secondary" android:textSize="12sp"/>
-            <Space android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1"/>
             <TextView
                 android:id="@+id/tv_accel_events_down"
                 android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="4" android:gravity="center"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
                 android:textColor="@color/text_secondary" android:textSize="12sp"/>
         </LinearLayout>
         <com.github.mikephil.charting.charts.BarChart
             android:id="@+id/chart_accel_levels"
             android:layout_width="match_parent"
-            android:layout_height="180dp"
+            android:layout_height="220dp"
             android:layout_marginBottom="16dp"
             android:background="@color/surface"/>
 
