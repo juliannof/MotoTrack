@@ -7,6 +7,24 @@ plugins {
     id 'com.google.android.libraries.mapsplatform.secrets-gradle-plugin'
 }
 
+// ── Versión = commit ───────────────────────────────────────────────────────────
+// Cada APK lleva el commit con el que se compiló (versionName "1.0+abc1234", y "-dirty" si había
+// cambios sin guardar). Antes de instalar se lee el del móvil y se compara (ver abajo), para no
+// pisar sin querer una versión más nueva con una rama antigua.
+def git = { String... args ->
+    try {
+        def p = (['git'] + args.toList()).execute(null, rootDir)
+        def out = new StringBuilder(); def err = new StringBuilder()
+        p.consumeProcessOutput(out, err)
+        p.waitFor()
+        [p.exitValue(), out.toString().trim()]
+    } catch (Exception e) {
+        [-1, '']
+    }
+}
+def gitHash = git('rev-parse', '--short=7', 'HEAD')[1] ?: 'sin-git'
+def gitDirty = git('status', '--porcelain', '--untracked-files=no')[1] ? '-dirty' : ''
+
 android {
     compileSdk 34
     namespace 'com.mototrack'
@@ -16,7 +34,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 1
-        versionName "1.0"
+        versionName "1.0+${gitHash}${gitDirty}"
     }
 
     buildFeatures {
@@ -84,3 +102,55 @@ dependencies {
     // Gson
     implementation 'com.diogobernardino:williamchart:3.10.1'
 }
+
+// ── Guarda contra instalar una versión antigua ────────────────────────────────
+// Falla si (1) el commit que hay instalado en el móvil no está en la historia de este build
+// (ese build no tiene todo lo que tiene el del móvil) o (2) esta rama no incluye origin/main.
+// Para saltársela a propósito: ./gradlew installDebug -PforzarInstalacion
+tasks.register('verificarVersionInstalada') {
+    doLast {
+        if (project.hasProperty('forzarInstalacion')) {
+            println 'verificarVersionInstalada: saltada con -PforzarInstalacion'
+            return
+        }
+        // (2) La rama debe contener todo lo de origin/main
+        def main = git('rev-parse', '--verify', '-q', 'origin/main')
+        if (main[0] == 0 && git('merge-base', '--is-ancestor', 'origin/main', 'HEAD')[0] != 0) {
+            throw new GradleException(
+                "Esta rama (${gitHash}) no incluye todo origin/main: instalarla sería poner una " +
+                "versión antigua. Trabaja sobre main actualizado (git pull). " +
+                "Para instalarla igualmente: -PforzarInstalacion")
+        }
+        // (1) Lo que hay instalado en el móvil
+        def adb = android.adbExecutable.absolutePath
+        def proc = [adb, 'shell', 'dumpsys', 'package', 'com.mototrack'].execute()
+        def out = new StringBuilder(); def err = new StringBuilder()
+        proc.consumeProcessOutput(out, err)
+        proc.waitFor()
+        def m = (out.toString() =~ /versionName=1\.0\+([0-9a-f]{7})(-dirty)?/)
+        if (!m.find()) {
+            println 'verificarVersionInstalada: no se pudo leer el commit instalado (móvil sin la app, ' +
+                    'sin dispositivo o instalada antes de este control): se instala.'
+            return
+        }
+        def instalado = m.group(1)
+        def sucio = m.group(2) != null
+        if (git('cat-file', '-e', "${instalado}^{commit}")[0] != 0) {
+            println "verificarVersionInstalada: el commit instalado ${instalado} no existe en este repositorio: se instala."
+            return
+        }
+        if (git('merge-base', '--is-ancestor', instalado, 'HEAD')[0] != 0) {
+            def autor = git('log', '-1', '--format=%h %ad %s', '--date=short', instalado)[1]
+            throw new GradleException(
+                "El móvil tiene un build MÁS NUEVO o de otra rama: ${autor}. " +
+                "Este build (${gitHash}) no lo contiene, así que lo pisarías con una versión antigua. " +
+                "Fusiona esa rama o usa -PforzarInstalacion si es lo que quieres.")
+        }
+        if (sucio) {
+            println "verificarVersionInstalada: AVISO, el móvil tiene un build de ${instalado} con cambios " +
+                    'sin guardar; al instalar se pierden esos cambios en el móvil.'
+        }
+        println "verificarVersionInstalada: ok (móvil ${instalado} -> este ${gitHash}${gitDirty})"
+    }
+}
+tasks.matching { it.name == 'installDebug' }.configureEach { dependsOn 'verificarVersionInstalada' }
