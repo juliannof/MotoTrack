@@ -70,8 +70,10 @@ class TrackingService : Service(), SensorEventListener {
         private const val PREF_LEAN_COUNT = "resting_lean_offset_count"
         // La R1200RS homologa ~47° de inclinación máxima; más allá es ruido de orientación,
         // no la moto tumbándose (picos vistos de 47,9° y 56,2° que no cuadran ni con la moto
-        // ni con el estilo de conducción)
-        private const val MAX_PLAUSIBLE_LEAN_DEG = 50f
+        // ni con el estilo de conducción). El límite tiene que ser ese 47°, no un margen por
+        // encima: con 50° el hueco de 3° dejaba pasar ruido (visto en ruta del 29/09: -49,3°
+        // en una curva sin frenada ni bache que lo justifique)
+        private const val MAX_PLAUSIBLE_LEAN_DEG = 47f
         // El lean real no puede cambiar más rápido que esto (incluido un cambio de signo);
         // un salto mayor en una sola lectura es un fallo puntual del sensor de rotación
         private const val MAX_LEAN_RATE_DEG_S = 150f
@@ -109,6 +111,25 @@ class TrackingService : Service(), SensorEventListener {
         // Peso de cada corrección secundaria sobre el offset vigente: pequeño a propósito,
         // para que ninguna parada aislada pueda desviar el offset de golpe
         private const val CALIB_CORR_LEARNING_RATE = 0.15f
+
+        // Corrección DINÁMICA: en curva sostenida a velocidad de carretera, atan(v·ω/g) da
+        // el lean que un turno coordinado necesitaría para esa velocidad y esa velocidad de
+        // guiñada (rumbo GPS) — la física de un avión o un dron para saber su inclinación sin
+        // depender de encontrar "la vertical". No le afecta el peralte de la vía, que sí
+        // contamina la calibración en recto (ver [trackStraightRiding]).
+        private const val DYNAMIC_CORR_MIN_SPEED_KMH = 25f
+        // Por debajo de esto el rumbo GPS apenas cambia entre fixes y ω sale puro ruido
+        private const val DYNAMIC_CORR_MIN_YAW_RATE_DEG_S = 5f
+        private const val DYNAMIC_CORR_MAX_ACCURACY_M = 8f
+        private const val DYNAMIC_CORR_WINDOW_MS = 2_000L
+        private const val DYNAMIC_CORR_MAX_STD_DEG = 2.0
+        // Más lento que la secundaria: una curva real casi nunca es un turno perfectamente
+        // coordinado (frenada o aceleración en la curva, viento, corrección del piloto), así
+        // que cada ventana individual pesa menos que un tramo parado y quieto
+        private const val DYNAMIC_CORR_LEARNING_RATE = 0.05f
+        // Suavizado de ω: a la cadencia del GPS, fix a fix sale con demasiado ruido para
+        // usarlo directo
+        private const val YAW_RATE_SMOOTHING = 0.3f
 
         // Límite de la vía: no saturar Overpass (uso justo) ni gastar datos de más
         // Suavizado de la aceleración longitudinal (~0,3 s a la frecuencia del acelerómetro)
@@ -276,6 +297,14 @@ class TrackingService : Service(), SensorEventListener {
     private var straightRefN = 0
     // Ya hubo calibración primaria en esta ruta; a partir de ahí solo correcciones secundarias
     private var calibratedThisRide = false
+    // Velocidad de guiñada (derivada del rumbo GPS) para la corrección dinámica
+    private var yawRateDegS = 0f
+    private var prevBearingElapsedNs = 0L
+    // Ventana de la corrección dinámica (moto en curva sostenida, a la frecuencia del sensor)
+    private var dynCorrStartMs = 0L
+    private var dynCorrN = 0
+    private var dynCorrSum = 0.0
+    private var dynCorrSumSq = 0.0
     val calibrationDone = MutableLiveData<Float>()
     private var lastGpsAlt = 0.0
     // Altura filtrada (NaN hasta el primer fix de la ruta)
@@ -483,8 +512,14 @@ class TrackingService : Service(), SensorEventListener {
         try {
             // Fused elige la fuente: GPS con cielo despejado y WiFi/red móvil
             // cuando no hay señal GPS (interiores, túneles, arranque en frío)
-            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L) // cada 1 segundo
-                .setMinUpdateDistanceMeters(1f)                                          // mínimo 1 metro
+            // Pedimos 5 Hz sin mínimo de distancia: a 1 Hz y 1 m mínimo, en tráfico lento
+            // (10-20 km/h) casi no llegan fixes nuevos y la derivada del rumbo (turno
+            // coordinado) sale muy ruidosa. El chip GNSS puede no dar más de 1-2 Hz reales
+            // aunque se pida más; hay que comprobar en el CSV la cadencia que entrega de verdad.
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 200L) // pedimos 5 Hz
+                .setMinUpdateDistanceMeters(0f)
+                // Que el primer fix no espere a ser preciso: sale uno aproximado ya y se afina
+                .setWaitForAccurateLocation(false)
                 .build()
             fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -532,6 +567,16 @@ class TrackingService : Service(), SensorEventListener {
             val d = abs(((location.bearing - prevBearing + 540f) % 360f) - 180f)
             d < STRAIGHT_MAX_BEARING_DELTA_DEG
         } else false
+        // Velocidad de guiñada para la corrección dinámica: un hueco entre fixes (GPS
+        // perdido) o dos fixes casi seguidos (jitter del proveedor) no valen para la derivada
+        if (location.hasBearing() && !prevBearing.isNaN() && prevBearingElapsedNs != 0L) {
+            val dt = (location.elapsedRealtimeNanos - prevBearingElapsedNs) / 1e9f
+            if (dt in 0.05f..2f) {
+                val rawYawRate = signedAngularDelta(prevBearing, location.bearing) / dt
+                yawRateDegS += YAW_RATE_SMOOTHING * (rawYawRate - yawRateDegS)
+            }
+        }
+        if (location.hasBearing()) prevBearingElapsedNs = location.elapsedRealtimeNanos
         prevBearing = if (location.hasBearing()) location.bearing else Float.NaN
         lastGpsBearing = location.bearing
         lastGpsAlt     = filterAltitude(location)
@@ -885,14 +930,15 @@ class TrackingService : Service(), SensorEventListener {
     }
 
     /**
-     * Calibración PRIMARIA (ver [trackStraightRiding], que es quien la dispara) y
-     * correcciones SECUNDARIAS (ver [trackSecondaryCorrection]) el resto de la ruta.
-     * Se evalúa en cada lectura del sensor.
+     * Calibración PRIMARIA (ver [trackStraightRiding], que es quien la dispara) y, el
+     * resto de la ruta, correcciones SECUNDARIAS al pararse (ver [trackSecondaryCorrection])
+     * y DINÁMICAS en curva (ver [trackDynamicCorrection]). Se evalúa en cada lectura del sensor.
      */
     private fun updateCalibration(raw: Float) {
         trackStraightRiding(raw)
         if (calibratedThisRide) {
             trackSecondaryCorrection(raw)
+            trackDynamicCorrection(raw)
         } else {
             setCalibrationStatus(CalibrationStatus.WAITING)
         }
@@ -947,6 +993,43 @@ class TrackingService : Service(), SensorEventListener {
         getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
             .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
         Log.i(TAG, "Corrección secundaria: offset ajustado a ${fmt(restingAngleOffset)}° (muestra ${fmt(mean.toFloat())}°)")
+    }
+
+    /**
+     * Corrección DINÁMICA: mientras dura una curva sostenida a velocidad de carretera
+     * ([DYNAMIC_CORR_MIN_SPEED_KMH], con guiñada mínima [DYNAMIC_CORR_MIN_YAW_RATE_DEG_S]),
+     * el ángulo de un turno coordinado da una referencia del offset independiente del
+     * giroscopio: si el turno fuera perfecto, [raw] − offset = atan(v·ω/g), así que
+     * [raw] − atan(v·ω/g) es una medida directa del offset, sin necesitar "la vertical".
+     * A diferencia de la calibración en recto, no le afecta el peralte de la vía.
+     */
+    private fun trackDynamicCorrection(raw: Float) {
+        val accuracyOk = (lastLocation?.accuracy ?: Float.MAX_VALUE) <= DYNAMIC_CORR_MAX_ACCURACY_M
+        val turning = lastGpsSpeed >= DYNAMIC_CORR_MIN_SPEED_KMH &&
+            abs(yawRateDegS) >= DYNAMIC_CORR_MIN_YAW_RATE_DEG_S && accuracyOk
+        if (!turning) { dynCorrN = 0; return }
+        val now = SystemClock.elapsedRealtime()
+        if (dynCorrN == 0) { dynCorrStartMs = now; dynCorrSum = 0.0; dynCorrSumSq = 0.0 }
+
+        val speedMs = lastGpsSpeed / 3.6
+        val yawRateRad = Math.toRadians(yawRateDegS.toDouble())
+        val coordinatedLean = Math.toDegrees(atan(speedMs * yawRateRad / 9.81))
+        val impliedOffset = raw - coordinatedLean
+        dynCorrN++; dynCorrSum += impliedOffset; dynCorrSumSq += impliedOffset * impliedOffset
+        if (now - dynCorrStartMs < DYNAMIC_CORR_WINDOW_MS) return
+
+        val mean = dynCorrSum / dynCorrN
+        val std = sqrt((dynCorrSumSq / dynCorrN - mean * mean).coerceAtLeast(0.0))
+        dynCorrN = 0
+        if (std >= DYNAMIC_CORR_MAX_STD_DEG) return
+        val diff = mean - restingAngleOffset
+        if (abs(diff) > CALIB_MAX_DIFF_FROM_STRAIGHT_DEG) return
+        if (abs(diff) < 0.05) return
+        restingAngleOffset += (diff * DYNAMIC_CORR_LEARNING_RATE).toFloat()
+        getSharedPreferences("mototrack_prefs", Context.MODE_PRIVATE)
+            .edit().putFloat(PREF_LEAN_OFFSET, restingAngleOffset).apply()
+        Log.i(TAG, "Corrección dinámica (turno coordinado): offset ajustado a ${fmt(restingAngleOffset)}° " +
+            "(implícito ${fmt(mean.toFloat())}°, v=${fmt(lastGpsSpeed)} km/h, ω=${fmt(yawRateDegS)}°/s)")
     }
 
     /**
@@ -1016,6 +1099,9 @@ class TrackingService : Service(), SensorEventListener {
 
     /** Diferencia entre dos rumbos en grados (0..180), cruzando el 0/360. */
     private fun angularDiff(a: Float, b: Float) = abs(((a - b + 540f) % 360f) - 180f)
+
+    /** Diferencia firmada entre dos rumbos (-180..180): positivo = giro a la derecha. */
+    private fun signedAngularDelta(from: Float, to: Float) = ((to - from + 540f) % 360f) - 180f
 
     private fun fmt(v: Float) = String.format(Locale.US, "%.1f", v)
 

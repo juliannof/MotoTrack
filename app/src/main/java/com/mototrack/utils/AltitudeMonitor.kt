@@ -122,7 +122,11 @@ class AltitudeMonitor(context: Context) {
     fun start() {
         if (running) return
         try {
-            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L).build()
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                // No esperar a un fix preciso para entregar el primero: sale ya uno aproximado
+                // (red/caché) mientras el GNSS se afina
+                .setWaitForAccurateLocation(false)
+                .build()
             fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
             locationManager.addNmeaListener(msl.nmeaListener, Handler(Looper.getMainLooper()))
             sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)?.let {

@@ -15,6 +15,26 @@
         android:orientation="horizontal"
         android:padding="16dp">
 
+        <!-- Miniatura del recorrido: captura del mapa cuando existe, dibujo del trazado mientras tanto -->
+        <FrameLayout
+            android:layout_width="112dp"
+            android:layout_height="88dp"
+            android:layout_marginEnd="12dp">
+
+            <com.mototrack.ui.TrackThumbView
+                android:id="@+id/track_thumb"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <ImageView
+                android:id="@+id/iv_map_thumb"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Mapa del recorrido"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+        </FrameLayout>
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
