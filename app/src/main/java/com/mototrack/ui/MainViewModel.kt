@@ -8,8 +8,11 @@ import com.mototrack.data.*
 import com.google.android.gms.maps.model.LatLng
 import com.mototrack.service.SensorLogger
 import com.mototrack.service.TrackingService
+import com.mototrack.utils.DrivingStyle
 import com.mototrack.utils.GpxExporter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -63,6 +66,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val maxLeanLeft   = TrackingService.maxLeanLeft
     val maxLeanRight  = TrackingService.maxLeanRight
     val maxAccel      = TrackingService.maxAccel
+    val maxBrake      = TrackingService.maxBrake
     val distanceKm    = TrackingService.distanceKm
 
     fun startTracking(routeName: String) {
@@ -93,6 +97,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun routePoints(routeId: Long) = repo.getPointsForRoute(routeId)
+
+    // Puntuación de conducción de cada ruta ya calculada (null = sin datos). Solo se toca desde el
+    // hilo principal; las rutas terminadas no cambian, así que no caduca.
+    private val styleCache = HashMap<Long, DrivingStyle.Score?>()
+
+    /** Estilo de conducción de una ruta terminada; se calcula una vez (lee todos sus puntos). */
+    suspend fun drivingStyle(route: Route): DrivingStyle.Score? {
+        if (!route.isCompleted) return null
+        if (styleCache.containsKey(route.id)) return styleCache[route.id]
+        val score = withContext(Dispatchers.Default) {
+            DrivingStyle.score(repo.getPointsForRoute(route.id), route.distanceKm)
+        }
+        styleCache[route.id] = score
+        return score
+    }
 
     suspend fun exportRouteAsGpx(routeId: Long): String? {
         val route = repo.getRouteById(routeId) ?: return null

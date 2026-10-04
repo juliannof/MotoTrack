@@ -2,7 +2,6 @@ package com.mototrack.ui
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.provider.Settings
 import android.os.Bundle
 import android.util.Log
@@ -12,6 +11,7 @@ import android.widget.EditText
 import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
@@ -58,10 +58,8 @@ class DashboardFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         viewModel = ViewModelProvider(requireActivity())[MainViewModel::class.java]
 
-        // En horizontal el vúmetro de inclinación ocupa 48 dp: sin escala numérica
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            binding.leanMeter.showScale = false
-        }
+        // El vúmetro de inclinación ocupa 48 dp: sin escala numérica
+        binding.leanMeter.showScale = false
         setupMap(savedInstanceState)
         setupObservers()
         setupButtons()
@@ -161,11 +159,6 @@ class DashboardFragment : Fragment() {
             binding.tvDistance.text = String.format("%.2f km", km)
         }
 
-        // Conteo de puntos (solo existe en el layout vertical, junto a distancia se quitó)
-        viewModel.pointCount.observe(viewLifecycleOwner) { count ->
-            binding.tvPointCount?.text = "$count pts"
-        }
-
         // Stats máximos
         viewModel.maxSpeed.observe(viewLifecycleOwner) { max ->
             binding.tvMaxSpeed.text = String.format("%.0f", max)
@@ -187,8 +180,7 @@ class DashboardFragment : Fragment() {
         NowPlaying.accessGranted.observe(viewLifecycleOwner) { updateNowPlaying() }
 
         viewModel.avgSpeed.observe(viewLifecycleOwner) { avg ->
-            binding.tvAvgSpeed.text = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) String.format("%.0f", avg)
-                                      else String.format("Vmed: %.0f km/h", avg)
+            binding.tvAvgSpeed.text = String.format("%.0f", avg)
         }
 
         // Estado de grabación → actualizar UI
@@ -199,6 +191,7 @@ class DashboardFragment : Fragment() {
                     ContextCompat.getColor(requireContext(), R.color.stop_red)
                 )
                 binding.recordingIndicator.visibility = View.VISIBLE
+                binding.accelMeter.reset()   // fuera el resumen de la ruta anterior
             } else {
                 binding.btnRecord.text = "▶ INICIAR RUTA"
                 binding.btnRecord.setBackgroundColor(
@@ -210,9 +203,8 @@ class DashboardFragment : Fragment() {
         }
     }
 
-    /** En horizontal no se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
-    private fun leanLabelDefault() =
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) "" else "INCLINACIÓN"
+    /** No se escribe "INCLINACIÓN" (no aporta): solo los máximos y los avisos de calibración. */
+    private fun leanLabelDefault() = ""
 
     private fun showCalibration(status: CalibrationStatus) {
         val label = binding.tvLeanLabel
@@ -228,10 +220,9 @@ class DashboardFragment : Fragment() {
         label.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
         // Mientras se calibra el aviso ocupa toda la fila; el máximo vuelve después
         val calibrating = status == CalibrationStatus.MEASURING
-        // En horizontal los máximos van solo en el gráfico (barrita con su número): sin texto
-        val hideMaxText = calibrating || resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        binding.tvMaxLean.visibility = if (hideMaxText) View.GONE else View.VISIBLE
-        binding.tvMaxLeanTitle.visibility = if (hideMaxText) View.GONE else View.VISIBLE
+        // Los máximos van solo en el gráfico (barrita con su número): sin texto
+        binding.tvMaxLean.visibility = View.GONE
+        binding.tvMaxLeanTitle.visibility = View.GONE
 
         // "Calibrado" y "sin calibrar" se muestran unos segundos y vuelven a la etiqueta normal
         if (status == CalibrationStatus.DONE) {
@@ -284,6 +275,7 @@ class DashboardFragment : Fragment() {
     private fun resetUI() {
         binding.tvSpeed.text = "0"
         binding.accelMeter.reset()
+        binding.accelMeter.showSummary(viewModel.maxAccel.value ?: 0f, viewModel.maxBrake.value ?: 0f)
         binding.leanMeter.reset()
     }
 
@@ -333,6 +325,8 @@ class DashboardFragment : Fragment() {
         } catch (e: Exception) { /* estilo no disponible: mapa normal */ }
     }
 
+    private var mapBearing = 0f
+
     private fun moveMap(p: DoubleArray) {
         val map = googleMap ?: return
         applyMapStyle(map, p)
@@ -341,8 +335,13 @@ class DashboardFragment : Fragment() {
         // MAP_FAST_SPEED_KMH: zoom out encuadrando toda la ruta recorrida, hasta que se
         // vuelva a bajar de esa velocidad
         val fast = (viewModel.currentSpeed.value ?: 0f) >= MAP_FAST_SPEED_KMH && trailPoints.size >= 2
+        // La orientación es la de la marcha (rumbo GPS); parado se conserva la última
+        if ((viewModel.currentSpeed.value ?: 0f) >= MAP_BEARING_MIN_KMH) {
+            viewModel.currentBearing.value?.let { mapBearing = it }
+        }
         val camera = (if (fast) routeBoundsCamera() else null)
-            ?: CameraUpdateFactory.newLatLngZoom(LatLng(p[0], p[1]), MAP_ZOOM)
+            ?: CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder().target(LatLng(p[0], p[1])).zoom(MAP_ZOOM).bearing(mapBearing).build())
 
         if (!mapCentered) {
             map.moveCamera(camera); mapCentered = true
@@ -588,7 +587,9 @@ class DashboardFragment : Fragment() {
 
         private const val MAP_STATE = "dashboard_map_state"
         private const val KEY_MUSIC_HINT_SEEN = "music_hint_seen"
-        private const val MAP_ZOOM = 16f
+        private const val MAP_ZOOM = 15f
+        // Por debajo de esta velocidad el rumbo del GPS no es fiable: se mantiene el último
+        private const val MAP_BEARING_MIN_KMH = 3f
         // Por encima de esta velocidad el mapa deja de centrar en el punto actual con zoom
         // fijo y pasa a encuadrar toda la ruta recorrida (zoom out), seguido mientras dure
         private const val MAP_FAST_SPEED_KMH = 15f

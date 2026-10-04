@@ -9,6 +9,10 @@
             android:id="@+id/nav_history"
             android:icon="@android:drawable/ic_menu_recent_history"
             android:title="Historial" />
+        <item
+            android:id="@+id/nav_moto"
+            android:icon="@drawable/ic_moto"
+            android:title="Mi moto" />
     </group>
     <item
         android:id="@+id/action_logout"

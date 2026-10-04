@@ -21,6 +21,8 @@ import com.mototrack.auth.AuthRepository
 import com.mototrack.data.*
 import kotlin.math.asin
 import kotlin.math.sin
+import com.mototrack.utils.LeanMath
+import com.mototrack.utils.MotoProfile
 import com.mototrack.utils.Compass
 import com.mototrack.utils.MslAltitude
 import com.mototrack.utils.PlaceTracker
@@ -63,17 +65,17 @@ class TrackingService : Service(), SensorEventListener {
 
         // Clave nueva: los offsets guardados con el cálculo antiguo (roll de
         // getOrientation) no valen para la inclinación lateral actual
-        private const val PREF_LEAN_OFFSET = "resting_lean_offset"
+        private const val PREF_LEAN_OFFSET = MotoProfile.PREF_LEAN_OFFSET
         // Nº de calibraciones primarias fundidas en PREF_LEAN_OFFSET desde siempre (todas las
         // rutas, no solo la de hoy): con esto el offset es una media incremental, no el último
         // valor suelto
-        private const val PREF_LEAN_COUNT = "resting_lean_offset_count"
+        private const val PREF_LEAN_COUNT = MotoProfile.PREF_LEAN_COUNT
         // La R1200RS homologa ~47° de inclinación máxima; más allá es ruido de orientación,
         // no la moto tumbándose (picos vistos de 47,9° y 56,2° que no cuadran ni con la moto
         // ni con el estilo de conducción). El límite tiene que ser ese 47°, no un margen por
         // encima: con 50° el hueco de 3° dejaba pasar ruido (visto en ruta del 29/09: -49,3°
         // en una curva sin frenada ni bache que lo justifique)
-        private const val MAX_PLAUSIBLE_LEAN_DEG = 47f
+        private const val MAX_PLAUSIBLE_LEAN_DEG = LeanMath.MAX_PLAUSIBLE_LEAN_DEG
         // El lean real no puede cambiar más rápido que esto (incluido un cambio de signo);
         // un salto mayor en una sola lectura es un fallo puntual del sensor de rotación
         private const val MAX_LEAN_RATE_DEG_S = 150f
@@ -82,7 +84,7 @@ class TrackingService : Service(), SensorEventListener {
         // vuelva a parecer razonable (también puede ser ruido decayendo desde el salto)
         private const val LEAN_QUARANTINE_MS = 2_000L
         // Módulo mínimo del "arriba" proyectado en la pantalla (0.5 ≈ pantalla a ≤60° de la vertical)
-        private const val MIN_SCREEN_VERTICALITY = 0.5f
+        private const val MIN_SCREEN_VERTICALITY = LeanMath.MIN_SCREEN_VERTICALITY
 
         // Autocalibración del cero de inclinación (moto derecha): calibración PRIMARIA en
         // cuanto hay referencia fiable de marcha en recta — no hace falta pararse, la media
@@ -154,6 +156,8 @@ class TrackingService : Service(), SensorEventListener {
         // suaviza limitando cuánto puede moverse por fix (a 1 Hz, ~5 m/s ya es mucho)
         private const val ALT_MAX_VERTICAL_ACCURACY_M = 12f
         private const val ALT_MAX_STEP_M = 5.0
+        // Fixes seguidos con la altitud cruda exactamente igual para darla por congelada
+        private const val FROZEN_ALT_MIN_FIXES = 5
         private const val ALT_SMOOTHING = 0.3
 
         // Con la caché local, la red solo se usa en tramos nuevos: se puede preguntar antes
@@ -212,6 +216,7 @@ class TrackingService : Service(), SensorEventListener {
         val maxLeanLeft     = MutableLiveData(0f)
         val maxLeanRight    = MutableLiveData(0f)
         val maxAccel        = MutableLiveData(0f)
+        val maxBrake        = MutableLiveData(0f)    // m/s², en positivo
         val distanceKm      = MutableLiveData(0f)
     }
 
@@ -309,6 +314,9 @@ class TrackingService : Service(), SensorEventListener {
     private var lastGpsAlt = 0.0
     // Altura filtrada (NaN hasta el primer fix de la ruta)
     private var altFiltered = Double.NaN
+    // Altitud cruda del último fix y cuántos seguidos la repitieron exacta (altura congelada)
+    private var lastRawAltitude = Double.NaN
+    private var rawAltitudeRepeats = 0
     // Satélites usados en el fix, del GnssStatus (Location.extras no lo trae de forma fiable)
     @Volatile private var satellitesUsed = 0
     private val gnssCallback = object : GnssStatus.Callback() {
@@ -390,6 +398,8 @@ class TrackingService : Service(), SensorEventListener {
         maxAltitude.postValue(Double.NaN)
         minAltitude.postValue(Double.NaN)
         altFiltered = Double.NaN
+        // El cero puede haber cambiado desde la pantalla de la moto (calibración en parado)
+        loadCalibration()
         calibratedThisRide = false
         leanValid.postValue(false)
         prevRawLean = Float.NaN
@@ -410,6 +420,7 @@ class TrackingService : Service(), SensorEventListener {
         maxLeanLeft.postValue(0f)
         maxLeanRight.postValue(0f)
         maxAccel.postValue(0f)
+        maxBrake.postValue(0f)
         distanceKm.postValue(0f)
 
         // Crear ruta en DB
@@ -417,6 +428,7 @@ class TrackingService : Service(), SensorEventListener {
             val route = Route(
                 name = routeName,
                 ownerEmail = AuthRepository(this@TrackingService).currentUser() ?: "",
+                motoName = MotoProfile.load(this@TrackingService).label,
                 startTime = System.currentTimeMillis()
             )
             val id = db.routeDao().insertRoute(route)
@@ -620,7 +632,24 @@ class TrackingService : Service(), SensorEventListener {
         val raw = msl.of(location)
         if (altFiltered.isNaN()) {
             altFiltered = raw
+            lastRawAltitude = location.altitude
+            rawAltitudeRepeats = 0
             return raw
+        }
+        // Al empezar, el sistema repite la última altitud que conocía durante uno o dos minutos
+        // (aunque la moto ya ruede) hasta que hay una altura GPS real. Esa primera altura real
+        // llega de golpe, con decenas de metros de salto: se acepta tal cual y no se suaviza como
+        // un cambio normal, o la altura iría con retraso durante otros 40 s
+        if (location.altitude == lastRawAltitude) {
+            rawAltitudeRepeats++
+        } else {
+            val wasFrozen = rawAltitudeRepeats >= FROZEN_ALT_MIN_FIXES
+            rawAltitudeRepeats = 0
+            lastRawAltitude = location.altitude
+            if (wasFrozen) {
+                altFiltered = raw
+                return raw
+            }
         }
         val poorVertical = location.hasVerticalAccuracy() &&
             location.verticalAccuracyMeters > ALT_MAX_VERTICAL_ACCURACY_M
@@ -673,6 +702,8 @@ class TrackingService : Service(), SensorEventListener {
         longitudinalAccel.postValue(smoothedAccel)
         // Máxima aceleración de la ruta: pico hacia delante (no las vibraciones)
         if (smoothedAccel > (maxAccel.value ?: 0f)) maxAccel.postValue(smoothedAccel)
+        // Y la máxima frenada (en positivo), para el resumen del vúmetro al detener
+        if (-smoothedAccel > (maxBrake.value ?: 0f)) maxBrake.postValue(-smoothedAccel)
     }
 
     /**
@@ -1069,29 +1100,7 @@ class TrackingService : Service(), SensorEventListener {
      * (El roll de getOrientation() medía otra cosa: con el móvil vertical u
      * horizontal mezclaba el cabeceo delante/atrás.)
      */
-    private fun lateralLeanDegrees(): Float? {
-        // Fila 3 de la matriz de rotación = eje "arriba" del mundo expresado
-        // en coordenadas del dispositivo (x derecha, y arriba en vertical)
-        val ux = rotMatrix[6]
-        val uy = rotMatrix[7]
-
-        // Pasar a coordenadas de pantalla según la rotación actual, para que
-        // funcione igual con el soporte en vertical o en horizontal
-        val (sx, sy) = when (displayRotation()) {
-            Surface.ROTATION_90  -> -uy to ux
-            Surface.ROTATION_180 -> -ux to -uy
-            Surface.ROTATION_270 -> uy to -ux
-            else                 -> ux to uy
-        }
-
-        // Móvil fuera del soporte (pantalla casi horizontal, boca abajo, en el
-        // bolsillo…): la proyección es ~0 o apunta hacia abajo y atan2 se
-        // dispara (-120°, +170° en el test del 24/09). No hay lean fiable.
-        if (sqrt(sx * sx + sy * sy) < MIN_SCREEN_VERTICALITY || sy <= 0f) return null
-
-        val lean = Math.toDegrees(atan2(-sx, sy).toDouble()).toFloat()
-        return if (abs(lean) <= MAX_PLAUSIBLE_LEAN_DEG) lean else null
-    }
+    private fun lateralLeanDegrees(): Float? = LeanMath.lateralLeanDegrees(rotMatrix, displayRotation())
 
     /** GPS si el error es pequeño; si no, la posición viene de WiFi/antenas. */
     private fun sourceOf(location: Location) =

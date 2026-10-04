@@ -67,13 +67,16 @@
 
                     <TextView
                         android:id="@+id/tv_place"
-                        android:layout_width="wrap_content"
+                        android:layout_width="290dp"
                         android:layout_height="wrap_content"
                         android:ellipsize="end"
+                        android:gravity="center_horizontal"
                         android:maxLines="1"
-                        android:maxWidth="180dp"
+                        app:autoSizeMaxTextSize="26sp"
+                        app:autoSizeMinTextSize="16sp"
+                        app:autoSizeStepGranularity="1sp"
+                        app:autoSizeTextType="uniform"
                         android:textColor="@color/accent_cyan"
-                        android:textSize="16sp"
                         android:fontFamily="sans-serif-black"
                         android:textStyle="bold" />
 

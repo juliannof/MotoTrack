@@ -29,6 +29,12 @@
     </fragment>
 
     <fragment
+        android:id="@+id/nav_moto"
+        android:name="com.mototrack.ui.MotoFragment"
+        android:label="Mi moto"
+        tools:layout="@layout/fragment_moto" />
+
+    <fragment
         android:id="@+id/nav_detail"
         android:name="com.mototrack.ui.RouteDetailFragment"
         android:label="Detalle de Ruta"

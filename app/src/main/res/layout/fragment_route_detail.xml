@@ -78,14 +78,14 @@
                 <!-- Max lean -->
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
                     android:layout_columnWeight="1" android:layout_rowWeight="1">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Max Lean Angle" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Inclinación máx." android:textColor="@color/text_secondary" android:textSize="11sp"/>
                     <TextView android:id="@+id/tv_max_lean" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_orange" android:textSize="20sp" android:textStyle="bold"/>
                 </LinearLayout>
 
                 <!-- Max accel -->
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
                     android:layout_columnWeight="1" android:layout_rowWeight="1">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Max Aceleración" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Aceleración máx." android:textColor="@color/text_secondary" android:textSize="11sp"/>
                     <TextView android:id="@+id/tv_max_accel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_green" android:textSize="20sp" android:textStyle="bold"/>
                 </LinearLayout>
 
@@ -94,6 +94,13 @@
                     android:layout_columnWeight="1" android:layout_rowWeight="1">
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Curvas" android:textColor="@color/text_secondary" android:textSize="11sp"/>
                     <TextView android:id="@+id/tv_curves" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:textSize="20sp" android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- Estilo de conducción (Paseo / Touring / Deportiva) -->
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_margin="8dp"
+                    android:layout_columnWeight="1" android:layout_rowWeight="1">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Conducción" android:textColor="@color/text_secondary" android:textSize="11sp"/>
+                    <TextView android:id="@+id/tv_driving_style" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/accent_green" android:textSize="20sp" android:textStyle="bold"/>
                 </LinearLayout>
 
             </GridLayout>
@@ -179,6 +186,23 @@
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Velocidad" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <!-- Máxima y media de la ruta (de las muestras reales: el gráfico va suavizado) -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="2dp">
+            <TextView
+                android:id="@+id/tv_speed_chart_max"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <TextView
+                android:id="@+id/tv_speed_chart_avg"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+        </LinearLayout>
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/chart_speed"
             android:layout_width="match_parent"
@@ -187,28 +211,87 @@
             android:background="@color/surface"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Aceleración" android:textColor="@color/text_primary"
+            android:text="Aceleraciones y frenadas" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <com.github.mikephil.charting.charts.LineChart
-            android:id="@+id/chart_accel"
+        <!-- Totales: aceleraciones arriba (izquierda) y frenadas abajo (derecha), como en las barras -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="2dp">
+            <TextView
+                android:id="@+id/tv_accel_events_up"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <TextView
+                android:id="@+id/tv_accel_events_down"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+        </LinearLayout>
+        <com.github.mikephil.charting.charts.BarChart
+            android:id="@+id/chart_accel_levels"
             android:layout_width="match_parent"
-            android:layout_height="160dp"
+            android:layout_height="220dp"
             android:layout_marginBottom="16dp"
             android:background="@color/surface"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Ángulo lateral" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <!-- Inclinación máxima a cada lado (de las muestras reales: el gráfico va suavizado) -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="2dp">
+            <TextView
+                android:id="@+id/tv_lean_chart_left"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <TextView
+                android:id="@+id/tv_lean_chart_right"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+        </LinearLayout>
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/chart_lean"
             android:layout_width="match_parent"
-            android:layout_height="160dp"
+            android:layout_height="260dp"
             android:layout_marginBottom="16dp"
             android:background="@color/surface"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="Altura del terreno" android:textColor="@color/text_primary"
             android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
+        <!-- Aviso de tramo estimado (solo si el GPS no dio altura real al empezar) -->
+        <TextView
+            android:id="@+id/tv_elevation_note"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginBottom="2dp"
+            android:paddingStart="8dp" android:paddingEnd="8dp"
+            android:textColor="@color/text_secondary" android:textSize="11sp"
+            android:visibility="gone"/>
+        <!-- Altura máxima y mínima de la ruta (del perfil que se dibuja: la altitud GPS es ruidosa) -->
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginBottom="2dp">
+            <TextView
+                android:id="@+id/tv_elevation_max"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="start"
+                android:paddingStart="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <TextView
+                android:id="@+id/tv_elevation_min"
+                android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:gravity="end"
+                android:paddingEnd="8dp"
+                android:textColor="@color/text_secondary" android:textSize="12sp"/>
+        </LinearLayout>
         <com.github.mikephil.charting.charts.LineChart
             android:id="@+id/chart_elevation"
             android:layout_width="match_parent"

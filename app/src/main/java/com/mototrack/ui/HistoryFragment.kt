@@ -54,6 +54,7 @@ class HistoryFragment : Fragment() {
         adapter = RouteAdapter(
             scope = viewLifecycleOwner.lifecycleScope,
             pointsFor = { id -> viewModel.routePoints(id) },
+            styleFor = { route -> viewModel.drivingStyle(route) },
             thumbFile = { id -> thumbs?.file(id) ?: File(requireContext().filesDir, "$THUMBS_DIR/route_$id.png") },
             requestThumb = { id -> thumbs?.request(id) },
             onItemClick = { route ->
