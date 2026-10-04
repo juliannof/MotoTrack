@@ -9,11 +9,11 @@ import android.os.SystemClock
 import android.view.*
 import android.widget.EditText
 import androidx.core.content.ContextCompat
+import com.google.android.gms.maps.CameraUpdate
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.android.gms.maps.model.Polyline
 import androidx.lifecycle.lifecycleScope
@@ -339,7 +339,7 @@ class DashboardFragment : Fragment() {
         if ((viewModel.currentSpeed.value ?: 0f) >= MAP_BEARING_MIN_KMH) {
             viewModel.currentBearing.value?.let { mapBearing = it }
         }
-        val camera = (if (fast) routeBoundsCamera() else null)
+        val camera = (if (fast) routeBoundsCamera(p, mapBearing) else null)
             ?: CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder().target(LatLng(p[0], p[1])).zoom(MAP_ZOOM).bearing(mapBearing).build())
 
@@ -349,13 +349,67 @@ class DashboardFragment : Fragment() {
         } else map.animateCamera(camera)
     }
 
-    /** Encuadre de toda la ruta recorrida; null si el mapa aún no tiene tamaño (recién creado). */
-    private fun routeBoundsCamera() = try {
-        val bounds = LatLngBounds.Builder().apply { trailPoints.forEach { include(it) } }.build()
-        val padding = (MAP_ROUTE_PADDING_DP * resources.displayMetrics.density).toInt()
-        CameraUpdateFactory.newLatLngBounds(bounds, padding)
-    } catch (e: IllegalStateException) {
-        null   // mapa sin layout todavía: se reintentará en la próxima posición
+    /**
+     * Encuadre del tramo reciente de la ruta con el mapa girado en el sentido de la marcha
+     * (rumbo arriba). `newLatLngBounds` no vale: siempre deja el norte arriba. Se calcula a mano
+     * en proyección Mercator: se giran los puntos al rumbo, se toma su caja y se saca el zoom
+     * que la mete en la parte útil de la vista, dejando aire a los lados y, sobre todo, por
+     * delante. Abajo queda más margen porque ahí van encima la distancia, la altura y el botón.
+     * Null si el mapa aún no tiene tamaño (recién creado).
+     */
+    private fun routeBoundsCamera(current: DoubleArray, bearingDeg: Float): CameraUpdate? {
+        val view = binding.dashboardMap ?: return null
+        val w = view.width.toDouble(); val h = view.height.toDouble()
+        if (w <= 0 || h <= 0) return null
+
+        // Solo el tramo reciente: con la ruta entera el zoom se iría a un mapa sin detalle
+        val recent = ArrayList<LatLng>()
+        var meters = 0f
+        val d = FloatArray(1)
+        for (i in trailPoints.indices.reversed()) {
+            val pt = trailPoints[i]
+            if (recent.isNotEmpty()) {
+                val prev = recent.last()
+                Location.distanceBetween(prev.latitude, prev.longitude, pt.latitude, pt.longitude, d)
+                meters += d[0]
+            }
+            recent.add(pt)
+            if (meters >= MAP_TRAIL_WINDOW_M) break
+        }
+        recent.add(LatLng(current[0], current[1]))
+
+        val th = Math.toRadians(bearingDeg.toDouble())
+        val c = Math.cos(th); val sn = Math.sin(th)
+        var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
+        var minU = Double.MAX_VALUE; var maxU = -Double.MAX_VALUE
+        for (pt in recent) {
+            val x = (pt.longitude + 180.0) / 360.0 * 256.0
+            val sinLat = Math.sin(Math.toRadians(pt.latitude))
+            val y = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * 256.0
+            val sx = x * c + y * sn          // derecha de la pantalla
+            val up = x * sn - y * c          // delante, en el sentido de la marcha
+            minX = minOf(minX, sx); maxX = maxOf(maxX, sx)
+            minU = minOf(minU, up); maxU = maxOf(maxU, up)
+        }
+        val padL = w * MAP_PAD_SIDE; val padR = w * MAP_PAD_SIDE
+        val padT = h * MAP_PAD_AHEAD; val padB = h * MAP_PAD_BEHIND
+        val availW = w - padL - padR; val availH = h - padT - padB
+        // 1 unidad del mundo = 2^zoom píxeles
+        val spanX = maxOf(maxX - minX, 1e-9); val spanU = maxOf(maxU - minU, 1e-9)
+        val zoom = (Math.log(minOf(availW / spanX, availH / spanU)) / Math.log(2.0))
+            .coerceIn(MAP_MIN_ZOOM.toDouble(), MAP_ZOOM.toDouble())
+
+        // La caja debe quedar en la parte útil, no en el centro de la vista: se desplaza el
+        // objetivo de la cámara lo que difieren ambos centros
+        val scale = Math.pow(2.0, zoom)
+        val cx = (minX + maxX) / 2
+        val cu = (minU + maxU) / 2 + ((padT - padB) / 2) / scale
+        val wx = cx * c + cu * sn
+        val wy = cx * sn - cu * c
+        val lon = wx / 256.0 * 360.0 - 180.0
+        val lat = Math.toDegrees(Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / 256.0))))
+        return CameraUpdateFactory.newCameraPosition(
+            CameraPosition.Builder().target(LatLng(lat, lon)).zoom(zoom.toFloat()).bearing(bearingDeg).build())
     }
 
     /** Quita la cortina con un fundido, dando un momento a que se pinten los tiles de la zona. */
@@ -593,7 +647,14 @@ class DashboardFragment : Fragment() {
         // Por encima de esta velocidad el mapa deja de centrar en el punto actual con zoom
         // fijo y pasa a encuadrar toda la ruta recorrida (zoom out), seguido mientras dure
         private const val MAP_FAST_SPEED_KMH = 15f
-        private const val MAP_ROUTE_PADDING_DP = 40
+        // Tramo reciente de la ruta que se encuadra en marcha, y el zoom más alejado permitido
+        private const val MAP_TRAIL_WINDOW_M = 3_000f
+        private const val MAP_MIN_ZOOM = 12.5f
+        // Aire de la vista (fracción de su ancho / alto): a los lados, por delante de la moto
+        // y por detrás (más, porque ahí van encima la distancia, la altura y el botón)
+        private const val MAP_PAD_SIDE = 0.18
+        private const val MAP_PAD_AHEAD = 0.20
+        private const val MAP_PAD_BEHIND = 0.28
         // Fix más preciso que esto = GPS de verdad (no una posición por red de cientos de metros)
         private const val MAP_MAX_ACCURACY_M = 25.0
         private const val MAP_REVEAL_DELAY_MS = 800L
